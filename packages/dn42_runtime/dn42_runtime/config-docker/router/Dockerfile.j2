@@ -1,0 +1,59 @@
+FROM {{ base_image }} AS debian-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN sed -i \
+    -e "s|deb.debian.org/debian-security|{{ debian_mirror }}/debian-security|g" \
+    -e "s|deb.debian.org/debian|{{ debian_mirror }}/debian|g" \
+      /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+     ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+CMD ["sleep", "infinity"]
+
+FROM debian-base AS runtime-base
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+     bash \
+ && rm -rf /var/lib/apt/lists/*
+
+FROM debian-base AS netns
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    iproute2 \
+ && rm -rf /var/lib/apt/lists/*
+
+FROM runtime-base AS wg-gateway
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+     iproute2 \
+     procps \
+     wireguard-tools \
+ && rm -rf /var/lib/apt/lists/*
+
+FROM runtime-base AS bird-router
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+     bird2 \
+     iproute2 \
+ && rm -rf /var/lib/apt/lists/*
+
+FROM runtime-base AS debug-shell
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+     bird2 \
+     curl \
+     iproute2 \
+     iputils-ping \
+     procps \
+     tcpdump \
+     vim-tiny \
+     wireguard-tools \
+ && rm -rf /var/lib/apt/lists/*

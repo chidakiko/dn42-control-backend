@@ -1,0 +1,66 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.claude
+
+# Logs
+*.log
+logs/
+
+# Local control-server SQLite databases
+control.db
+*.db-journal
+
+# Generated / scratch output. All transient renders, dev DBs, and ad-hoc
+# experiments live here so they cannot leak into source folders.
+/tmp/
+
+# Local agent runtime state (rendered configs, runtime caches, etc.)
+/.agent-controller-api-live/
+/runtime/
+/cache/
+
+# Secrets
+*.key
+*.pem
+*.crt
+*.token
+agent.toml
+
+
+/secrets/
+
+# Vendor source trees imported for reference only
+/dn42-router/
+/ansible-dn42/
+
+/迁移配置/
+/deploy/
+/examples/local-three-node/
+/examples/local-two-node/
+/examples/two-internal-one-ebgp-demo/
+# 脱敏工具：其 KEY_MAP/REPLACEMENTS 含全部真实值映射源,绝不入库(一次性,本地保留)。
+/scripts/dev/sanitize_examples.py
+/it_backup.json
+/docshots.db

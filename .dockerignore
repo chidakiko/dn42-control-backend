@@ -1,0 +1,39 @@
+# 让 docker build 上下文尽量精简（context = 仓库根）。
+.git/
+.venv/
+venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+tmp/
+control.db
+*.db
+*.db-journal
+.agent-controller-api-live/
+runtime/
+cache/
+examples/rendered-hkg1/
+examples/local-three-node/
+examples/local-two-node/
+examples/two-internal-one-ebgp-demo/
+.vscode/
+.idea/
+.claude
+logs/
+**/*.log
+
+# 秘密与本地凭据：.gitignore 排除不等于 build context 排除。
+# 这些绝不能进入 build context（更不能被 COPY 进镜像层）。
+**/.env
+**/*.key
+**/*.pem
+**/*.crt
+**/*.token
+**/agent.toml
+secrets/
+迁移配置/
+
+# Vendor 参考源码树，不参与构建。
+dn42-router/
+ansible-dn42/

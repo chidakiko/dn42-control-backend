@@ -1,0 +1,51 @@
+name: Release
+
+# 打形如 v1.2.3 的 tag 时,构建首方 wheel(版本号取自 tag) + 前端静态包,
+# 并创建 GitHub Release 把它们作为附件上传。
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Set version from tag
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          echo "building version $VER"
+          for pkg in packages/dn42_common packages/dn42_schemas packages/dn42_runtime packages/dn42_templates apps/control-server apps/node-agent; do
+            sed -i "s/^version = \".*\"/version = \"$VER\"/" "$pkg/pyproject.toml"
+          done
+
+      - name: Build wheels
+        run: |
+          python -m pip install --upgrade pip build
+          for pkg in packages/dn42_common packages/dn42_schemas packages/dn42_runtime packages/dn42_templates apps/control-server apps/node-agent; do
+            python -m build --wheel --outdir dist "$pkg"
+          done
+
+      - name: Build web bundle
+        run: |
+          cd apps/web
+          npm ci
+          npm run build
+          tar -czf "$GITHUB_WORKSPACE/dist/web-build-${GITHUB_REF_NAME}.tar.gz" -C build .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

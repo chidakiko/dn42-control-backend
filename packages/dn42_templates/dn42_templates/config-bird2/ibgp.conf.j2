@@ -1,0 +1,59 @@
+# 由模板生成
+{% macro ibgp_link(host, is_rr_downstream=False, is_rr_upstream=False) -%}
+protocol bgp ibgp_{{ host | replace("-", "_") }} {
+    local as {{ ownas }};
+        neighbor {{ bird_hosts[host]['ownip6'] }} as {{ ownas }};
+    source address {{ ownip6 }};
+{% if is_rr_upstream %}
+{# 上游节点把下游标记为 rr client，方向不能反过来。 #}
+    rr client;
+{% endif %}
+    advertise hostname on;
+
+    ipv4 {
+        import where ibgp_import_filter();
+{% if is_rr_downstream %}
+{# 避免从 private server 重新导出路由；内部服务由 IGP 承载。 #}
+        export none;
+{% else %}
+        export where ibgp_export_filter();
+{% endif %}
+        next hop address {{ ownip }};
+        next hop self ebgp;
+        import table;
+    };
+
+    ipv6 {
+        import where ibgp_import_filter();
+{% if is_rr_downstream %}
+        export none;
+{% else %}
+        export where ibgp_export_filter();
+{% endif %}
+        next hop address {{ ownip6 }};
+        next hop self ebgp;
+        import table;
+    };
+}
+{%- endmacro %}
+
+{# 不在 iBGP mesh 内的 private server 使用 RR upstream。 #}
+{% if ibgp_rr_upstreams is defined %}
+{% for host in ibgp_rr_upstreams %}
+{{ ibgp_link(host, is_rr_downstream=True) }}
+{% endfor %}
+{% else %}
+{# dn42 router 之间默认生成 iBGP mesh。 #}
+{% for host in internal_router_names %}
+{% if host != node_id %}
+{{ ibgp_link(host) }}
+{% endif %}
+{% endfor %}
+{# 下游 private 节点始终作为 RR client。
+   这些 session 用来连接没有通过 IGP 承载的网段，例如下游服务和任播 DNS。 #}
+{% for host in private_router_names %}
+{% if node_id in bird_hosts[host].get('ibgp_rr_upstreams', []) %}
+{{ ibgp_link(host, is_rr_upstream=True) }}
+{% endif %}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,9 @@
+{% if anycast_interface_names %}
+protocol direct direct_anycast {
+    ipv4;
+    ipv6;
+    interface {{ anycast_interface_names | map("to_json") | join(", ") }};
+}
+{% else %}
+# 当前节点未启用任播服务
+{% endif %}

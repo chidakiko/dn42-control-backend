@@ -1,0 +1,29 @@
+.:53 {
+  bind 172.20.0.20 172.20.0.22 fdce:1111:2222::20 fdce:1111:2222::22
+  errors
+  cache 300
+}
+
+0.20.172.in-addr.arpa:53 {
+  bind 172.20.0.20 172.20.0.22 fdce:1111:2222::20 fdce:1111:2222::22
+  file /etc/coredns/zones/db.0.20.172
+  cache 300
+}
+
+example.dn42:53 {
+  bind 172.20.0.20 172.20.0.22 fdce:1111:2222::20 fdce:1111:2222::22
+  file /etc/coredns/zones/db.example.dn42
+  cache 300
+}
+
+20.172.in-addr.arpa:53 {
+  bind 172.20.0.20 172.20.0.22 fdce:1111:2222::20 fdce:1111:2222::22
+  forward . 172.20.0.53
+  cache 300
+}
+
+dn42:53 {
+  bind 172.20.0.20 172.20.0.22 fdce:1111:2222::20 fdce:1111:2222::22
+  forward . 172.20.0.53
+  cache 300
+}

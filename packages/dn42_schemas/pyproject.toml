@@ -1,0 +1,13 @@
+[project]
+name = "dn42-schemas"
+version = "1.0.0"
+description = "Shared schemas for DN42 control backend"
+requires-python = ">=3.11"
+dependencies = [
+  "dn42-common",
+  "pydantic>=2.10",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
