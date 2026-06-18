@@ -1,0 +1,40 @@
+# DN42 Node Agent 配置示例（TOML）
+# 默认查找路径：/etc/dn42-control/agent.toml
+# 也可以通过 `dn42-node-agent --config /path/to/agent.toml` 指定。
+
+[agent]
+# Control Server 基础 URL；为空表示离线模式（使用 --desired-state 或内置示例）。
+# controller_url = "https://control.example.dn42"
+
+# 一次性 enrollment token，仅首次注册时使用，注册成功后 agent token 由本地 identity 持久化。
+# enrollment_token = "..."
+
+# 希望绑定的 node_id；与 controller 协商时会作为 requested_node_id 一起上报。
+# requested_node_id = "edge1"
+
+# 覆盖 inventory 中的 hostname；缺省时使用 platform.node()。
+# hostname = "edge1"
+
+# 本地状态目录；身份、缓存的 desired state、渲染输出、snapshot 历史均在这里。
+state_dir = "/var/lib/dn42-control"
+
+# 渲染输出目录覆盖；不设置时使用 <state_dir>/nodes/<node_id>/rendered。
+# rendered_dir = "/var/lib/dn42-control/rendered"
+
+# reconcile 深度：apply（默认，写盘+部署+收敛） / write-rendered（只写渲染文件） / plan-only（只规划，仅单次诊断）。
+# mode = "apply"
+
+# 日志级别：DEBUG / INFO / WARNING / ERROR。
+log_level = "INFO"
+
+# HTTP 请求超时秒数。
+http_timeout_seconds = 10.0
+
+# 路由全表周期采集间隔（秒）；设 0 关闭采集。默认 300。
+# routing_interval_seconds = 300.0
+
+# BIRD 控制 socket 路径的【显式覆盖】。路由采集已全量直连 socket（不再经 docker exec
+# 跑 birdc）；默认无需设置——agent 从 bird 服务的 /run/bird 可写挂载自动推导宿主侧
+# socket 路径（<rendered_dir>/runtime/bird-run/bird.ctl）。仅在非常规部署 / 联调、socket
+# 落在别处时才覆盖。bird 服务缺 /run/bird 挂载（快照未升级）时本轮采集标记 UNAVAILABLE。
+# bird_socket_path = "/run/bird/bird.ctl"

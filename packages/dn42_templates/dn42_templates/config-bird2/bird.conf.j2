@@ -1,0 +1,188 @@
+log "/var/log/bird/bird.log" 10485760 "/var/log/bird/bird.log.1" { remote, warning, error, auth, fatal, bug, debug, trace };
+#debug protocols { routes, events };
+
+# 全局常量。OWNAS 是本 AS，OWNIP/OWNIPv6 同时用于 router id、kernel 导出源地址和 iBGP next-hop。
+define OWNAS = {{ ownas }};
+define OWNIP = {{ ownip }};
+define OWNIPv6 = {{ ownip6 }};
+
+# DN42 标准 region community 编号。community_filters.conf 会在导出本地路由时写入 (64511, DN42_REGION)。
+define DN42_REGION = {{ dn42_region }};
+
+hostname "{{ bird_hostname }}";
+
+# bird-exporter 使用这些时间格式，便于外部监控读取一致的时间戳。
+timeformat base     iso long;
+timeformat log      iso long;
+timeformat protocol iso long;
+timeformat route    iso long;
+
+protocol static static_routes4 {
+# 本 AS 拥有的 IPv4 聚合前缀以 reject route 进入 BIRD。
+# 这样 BGP 可以宣告聚合前缀，同时内核不会把不存在的更具体目的地转发出去。
+{% if export_ownnets|default(True) %}
+{% for prefix in ownnets4 %}
+    route {{ prefix }} reject;
+{% endfor %}
+{% endif %}
+{% for route in static_routes4|default([]) %}
+    route {{ route }};
+{% endfor %}
+
+    ipv4 {
+        import all;
+        export none;
+    };
+}
+
+protocol static static_routes6 {
+# IPv6 聚合前缀同样使用 reject route 宣告，和 IPv4 策略保持一致。
+{% if export_ownnets|default(True) %}
+{% for prefix in ownnets6 %}
+    route {{ prefix }} reject;
+{% endfor %}
+{% endif %}
+{% for route in static_routes6|default([]) %}
+    route {{ route }};
+{% endfor %}
+
+    ipv6 {
+        import all;
+        export none;
+    };
+}
+
+router id OWNIP;
+
+protocol device {
+    scan time 10;
+}
+
+function is_self_net() {
+  # 匹配本 AS 拥有的 IPv4 前缀及其 more-specific，用于阻止从 eBGP 重新学习自己的路由。
+  return net ~ [
+    {{ownnets4_ipset}}
+  ];
+}
+
+function is_self_net_v6() {
+  # 匹配本 AS 拥有的 IPv6 前缀及其 more-specific。
+  return net ~ [
+    {{ownnets6_ipset}}
+  ];
+}
+
+function is_self_net_aggregate() {
+  # 只匹配本 AS 聚合前缀本身。community_filters.conf 用它避免向外导出聚合前缀下的本地 more-specific。
+  return net ~ [
+    {{ownnets4_aggr_ipset}}
+  ] || net ~ [
+    {{ownnets6_aggr_ipset}}
+  ];
+}
+
+function is_valid_network() {
+  # DN42/相关 overlay 的 IPv4 可接受前缀范围。eBGP import/export 都会先经过这个白名单。
+  return net ~ [
+    172.20.0.0/14{21,29}, # dn42
+    172.20.0.0/24{28,32}, # dn42 任播
+    172.21.0.0/24{28,32}, # dn42 任播
+    172.22.0.0/24{28,32}, # dn42 任播
+    172.23.0.0/24{28,32}, # dn42 任播
+    172.31.0.0/16+,       # ChaosVPN
+    10.100.0.0/14+,       # ChaosVPN
+    10.0.0.0/8{15,24},    # Freifunk.net
+    10.127.0.0/16+        # NeoNetwork
+  ];
+}
+
+roa4 table dn42_roa;
+roa6 table dn42_roa_v6;
+
+# RPKI 会话独立在 rpki.conf 中，方便以后在 live RPKI 和静态 ROA 文件之间切换。
+include "/etc/bird/rpki.conf";
+
+function is_valid_network_v6() {
+  # DN42/相关 overlay 的 IPv6 可接受前缀范围。
+  return net ~ [
+    fd00::/8{44,64}, # RFC 4193 ULA 地址空间
+    fd10:127::/32+   # NeoNetwork
+  ];
+}
+
+protocol kernel {
+    scan time 20;
+    # 使用低于内核直连路由的优先级，避免覆盖设备路由。
+    metric 512;
+
+    ipv6 {
+        import none;
+        export filter {
+            if source = RTS_DEVICE then {
+              reject;
+            }
+            krt_prefsrc = OWNIPv6;
+            accept;
+        };
+    };
+};
+
+protocol kernel {
+    scan time 20;
+
+    ipv4 {
+        import none;
+        export filter {
+            if source = RTS_DEVICE then {
+              reject;
+            }
+            krt_prefsrc = OWNIP;
+            accept;
+        };
+    };
+}
+
+include "/etc/bird/custom_filters.conf";
+include "/etc/bird/community_filters.conf";
+
+template bgp dnpeers {
+    local as OWNAS;
+    # eBGP 路由延迟相同时优先保留旧路由，而不是比较 router ID。
+    prefer older on;
+    # 跨 peer 比较 MED，用于 cold potato 选路。
+    med metric on;
+
+    # DN42 peer 应该把自己的 ASN 放在 AS_PATH 第一位；这可以挡掉常见的错误导出。
+    enforce first as on;
+    # 让对端和监控系统能看到 BIRD hostname，排障时更容易定位 session。
+    advertise hostname on;
+
+    # eBGP 不依赖 graceful restart，避免重启时保留过期转发表状态。
+    graceful restart off;
+}
+
+template bgp route_collector {
+    # route collector 只接收我们导出的路由，不从 collector 导入任何前缀。
+    local as OWNAS;
+
+    multihop;
+    advertise hostname on;
+
+    ipv4 {
+        add paths tx;
+        import none;
+        export where dn42_export_filter(0, 0, 0);
+    };
+
+    ipv6 {
+        add paths tx;
+        import none;
+        export where dn42_export_filter(0, 0, 0);
+    };
+}
+
+include "/etc/bird/ospf.conf";
+include "/etc/bird/ibgp.conf";
+include "/etc/bird/dn42_peers.conf";
+include "/etc/bird/local*.conf";
+include "/etc/bird/anycast_services.conf";
