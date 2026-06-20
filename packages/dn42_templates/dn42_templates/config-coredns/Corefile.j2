@@ -1,7 +1,7 @@
 .:53 {
   bind {{ bind_addresses | join(' ') }}
   errors
-  cache 300
+  reload
 }
 {% for zone in zones %}
 
@@ -9,6 +9,7 @@
   bind {{ bind_addresses | join(' ') }}
   file /etc/coredns/zones/db.{{ zone.zone_file }}
   cache {{ cache_ttl_seconds }}
+  reload
 }
 {% endfor %}
 {% for forward in forwards %}
@@ -17,5 +18,6 @@
   bind {{ bind_addresses | join(' ') }}
   forward . {{ forward.upstreams | join(' ') }}
   cache {{ cache_ttl_seconds }}
+  reload
 }
 {% endfor %}

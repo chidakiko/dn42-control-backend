@@ -45,6 +45,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [architecture.md](architecture.md) | 系统整体结构、内部组件、数据流、节点 runtime、变更闭环 |
+| [addressing.md](addressing.md) | 地址概念总览：所有地址类型的用途 / 真相源 / 影响半径，按 源/派生/副本 分类（单一真相源重构基线） |
 | [node-agent.md](node-agent.md) | Agent 运行模式、守护循环、部署 backend、本机收敛、模块边界、错误分层 |
 | [security.md](security.md) | token 哈希模型、注册审批闸门、接口暴露边界、写盘与容器安全 |
 
