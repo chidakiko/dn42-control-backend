@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    BigInteger,
     DateTime,
     ForeignKey,
     Integer,
@@ -40,7 +41,9 @@ class Node(Base):
 
     node_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     site: Mapped[str | None] = mapped_column(String(32))
-    asn: Mapped[int] = mapped_column(Integer, nullable=False)
+    # DN42 ASN 是 32 位（4242420000+），超 Postgres int32（≤21.4 亿）→ 必须 BigInteger。
+    # SQLite 的 INTEGER 是动态宽度故历史上没暴露，迁 Postgres 时才显形。
+    asn: Mapped[int] = mapped_column(BigInteger, nullable=False)
     router_id: Mapped[str] = mapped_column(String(64), nullable=False)
     loopback_ipv4: Mapped[str | None] = mapped_column(String(64))
     loopback_ipv6: Mapped[str | None] = mapped_column(String(64))

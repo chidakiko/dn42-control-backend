@@ -17,7 +17,7 @@ agent 周期上报的 ``RoutingTableSnapshot`` 持久化在这里，与 reconcil
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
@@ -81,7 +81,7 @@ class NodeRouteEntry(Base):
     local: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    origin_asn: Mapped[int | None] = mapped_column(Integer)
+    origin_asn: Mapped[int | None] = mapped_column(BigInteger)  # DN42 ASN 超 int32
     protocol: Mapped[str | None] = mapped_column(String(128))
     rpki: Mapped[str | None] = mapped_column(String(16))
     next_hop: Mapped[str | None] = mapped_column(String(128))

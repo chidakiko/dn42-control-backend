@@ -180,22 +180,32 @@ async def _load_dns_group(session: AsyncSession, node: Node) -> dict | None:
         .where(DnsGroupZone.dns_group_id == group.id, DnsGroupZone.enabled.is_(True))
         .order_by(DnsGroupZone.zone, DnsGroupZone.id)
     )
-    zones: list[dict] = []
-    for zone in zone_rows.scalars():
+    zone_list = list(zone_rows.scalars())
+
+    # 一条查询取回全部 zone 的 enabled 记录，再按 zone_id 分桶——避免逐 zone N+1。
+    records_by_zone: dict[int, list[dict]] = {}
+    if zone_list:
         rec_rows = await session.execute(
             select(DnsRecord)
-            .where(DnsRecord.dns_group_zone_id == zone.id, DnsRecord.enabled.is_(True))
-            .order_by(DnsRecord.sort_order, DnsRecord.id)
+            .where(
+                DnsRecord.dns_group_zone_id.in_([z.id for z in zone_list]),
+                DnsRecord.enabled.is_(True),
+            )
+            .order_by(DnsRecord.dns_group_zone_id, DnsRecord.sort_order, DnsRecord.id)
         )
-        records = [
-            {
-                "name": r.name,
-                "type": r.type,
-                "value": r.content,
-                **({"ttl": r.ttl} if r.ttl is not None else {}),
-            }
-            for r in rec_rows.scalars()
-        ]
+        for r in rec_rows.scalars():
+            records_by_zone.setdefault(r.dns_group_zone_id, []).append(
+                {
+                    "name": r.name,
+                    "type": r.type,
+                    "value": r.content,
+                    **({"ttl": r.ttl} if r.ttl is not None else {}),
+                }
+            )
+
+    zones: list[dict] = []
+    for zone in zone_list:
+        records = records_by_zone.get(zone.id, [])
         if records:  # 空 zone 不输出（Corefile 引用却无 zone 文件会让 CoreDNS 加载失败）。
             zones.append(_zone_spec(zone, records))
 

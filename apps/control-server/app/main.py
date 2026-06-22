@@ -32,6 +32,7 @@ from .core.config import ControlServerConfig  # noqa: E402
 from .core.events import EventBus  # noqa: E402
 from .db import Base, Database  # noqa: E402
 from .services.audit import AuditLogStore  # noqa: E402
+from .services.cache import Cache  # noqa: E402
 from .services.desired_state import DesiredStateStore  # noqa: E402
 from .services.enrollment import EnrollmentTokenStore  # noqa: E402
 from .services.node_status import NodeStatusStore  # noqa: E402
@@ -56,24 +57,31 @@ def create_app(config: ControlServerConfig | None = None) -> FastAPI:
         # 生产启动**绝不**写入任何节点：空库由 import / provision 流程填充。
         # 测试需要预置节点时在 conftest 里显式 seed,不经此生产路径。
 
+        cache = Cache(config.redis_url)
+        if cache.enabled:
+            _LOGGER.info("cache: Redis 缓存已启用 (%s)", config.redis_url)
+
         app.state.config = config
         app.state.database = database
+        app.state.cache = cache
         app.state.tokens = TokenStore(database)
-        app.state.desired_state = DesiredStateStore(database)
+        app.state.desired_state = DesiredStateStore(database, cache=cache)
         app.state.node_status = NodeStatusStore(
             database,
             stale_after_seconds=config.health_stale_after_seconds,
             down_after_seconds=config.health_down_after_seconds,
+            cache=cache,
         )
         app.state.pending_registrations = PendingRegistrationStore(database)
         app.state.enrollment_tokens = EnrollmentTokenStore(database)
-        app.state.routing = RoutingStore(database)
+        app.state.routing = RoutingStore(database, cache=cache)
         app.state.audit = AuditLogStore(database)
         app.state.bus = EventBus()
 
         try:
             yield
         finally:
+            await cache.close()
             await database.dispose()
 
     app = FastAPI(title="DN42 Control Server", version="1.0.0", lifespan=lifespan)

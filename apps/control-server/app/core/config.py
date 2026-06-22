@@ -108,6 +108,9 @@ class ControlServerConfig:
     # 超过更长的 ``health_down_after`` 完全没上报则判为 down（宕机），覆盖任何已知状态。
     health_stale_after_seconds: float = 900.0
     health_down_after_seconds: float = 3600.0
+    # Redis 缓存 DSN（如 ``redis://redis:6379/0``）。``None`` 表示不启用缓存——
+    # 所有读直接走 DB（缓存层全程 no-op）。缓存是旁路，不可用绝不影响正确性。
+    redis_url: str | None = None
 
     @classmethod
     def from_env(cls) -> "ControlServerConfig":
@@ -145,6 +148,7 @@ class ControlServerConfig:
             health_down_after_seconds=_env_float(
                 "DN42_CONTROL_HEALTH_DOWN_AFTER", cls.health_down_after_seconds
             ),
+            redis_url=os.environ.get("DN42_CONTROL_REDIS_URL") or None,
         )
 
 

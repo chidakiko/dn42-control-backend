@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.Column("is_v6", sa.Boolean(), server_default="0", nullable=False),
         sa.Column("local", sa.Boolean(), server_default="0", nullable=False),
         sa.Column("primary", sa.Boolean(), server_default="0", nullable=False),
-        sa.Column("origin_asn", sa.Integer(), nullable=True),
+        sa.Column("origin_asn", sa.BigInteger(), nullable=True),  # DN42 ASN 超 int32
         sa.Column("protocol", sa.String(length=128), nullable=True),
         sa.Column("rpki", sa.String(length=16), nullable=True),
         sa.Column("next_hop", sa.String(length=128), nullable=True),

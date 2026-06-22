@@ -30,6 +30,7 @@ from dn42_schemas import (
 
 from ..db.engine import Database
 from ..db.models import NodeStatus, NodeStatusEvent
+from .cache import Cache
 
 # 每个节点 / 每种 kind 在历史表里最多保留多少条。
 _HISTORY_KEEP = 100
@@ -84,16 +85,27 @@ class NodeStatusStore:
     ``down``(宕机),无论库里存的是什么状态。两者来自配置,可被方法参数覆盖。
     """
 
+    # health 缓存 TTL：含 now()-updated_at 时间衰减，但 10s 误差远小于 900s/3600s
+    # 失联阈值，可忽略；Web 高频轮询期间命中缓存，写入时主动失效。
+    _HEALTH_TTL = 10
+
     def __init__(
         self,
         database: Database,
         *,
         stale_after_seconds: float = 900.0,
         down_after_seconds: float = 3600.0,
+        cache: "Cache | None" = None,
     ) -> None:
         self._db = database
         self._stale_after = stale_after_seconds
         self._down_after = down_after_seconds
+        self._cache = cache or Cache(None)
+
+    async def _bust_health(self, node_id: str) -> None:
+        """节点上报后失效其 health 缓存 + fleet 汇总（在事务 commit 之后调用）。"""
+
+        await self._cache.delete("health:fleet", f"health:node:{node_id}")
 
     async def _get_or_create(self, session, node_id: str) -> NodeStatus:
         row = await session.get(NodeStatus, node_id)
@@ -145,6 +157,7 @@ class NodeStatusStore:
             )
             await self._recompute_health(row)
             await self._trim_history(session, snapshot.node_id, "snapshot")
+        await self._bust_health(snapshot.node_id)  # commit 后失效，避免脏缓存
 
     async def record_report(self, report: ReconciliationReport) -> None:
         payload = report.model_dump(mode="json")
@@ -167,6 +180,7 @@ class NodeStatusStore:
             )
             await self._recompute_health(row)
             await self._trim_history(session, report.node_id, "report")
+        await self._bust_health(report.node_id)
 
     async def record_apply(self, result: ApplyResult) -> None:
         payload = result.model_dump(mode="json")
@@ -187,6 +201,7 @@ class NodeStatusStore:
             )
             await self._recompute_health(row)
             await self._trim_history(session, result.node_id, "apply")
+        await self._bust_health(result.node_id)
 
     async def record_reresolve(self, report: WireGuardReresolveReport) -> None:
         """登记一次 WG endpoint 重解析（``kind=reresolve`` 历史事件）。
@@ -247,6 +262,12 @@ class NodeStatusStore:
         stale_after_seconds: float | None = None,
         down_after_seconds: float | None = None,
     ) -> dict | None:
+        use_cache = stale_after_seconds is None and down_after_seconds is None
+        cache_key = f"health:node:{node_id}"
+        if use_cache:
+            cached = await self._cache.get_json(cache_key)
+            if cached is not None:
+                return cached
         async with self._db.session() as session:
             row = await session.get(NodeStatus, node_id)
             if row is None:
@@ -263,7 +284,9 @@ class NodeStatusStore:
             data["last_snapshot"] = row.last_snapshot
             data["last_report"] = row.last_report
             data["last_apply"] = row.last_apply
-            return data
+        if use_cache:
+            await self._cache.set_json(cache_key, data, ttl_seconds=self._HEALTH_TTL)
+        return data
 
     async def list_all(
         self,
@@ -273,12 +296,21 @@ class NodeStatusStore:
     ) -> list[dict]:
         stale = stale_after_seconds if stale_after_seconds is not None else self._stale_after
         down = down_after_seconds if down_after_seconds is not None else self._down_after
+        # 仅默认阈值才走缓存（自定义阈值是稀有调用，不缓存以免键爆炸）。
+        use_cache = stale_after_seconds is None and down_after_seconds is None
+        if use_cache:
+            cached = await self._cache.get_json("health:fleet")
+            if cached is not None:
+                return cached
         async with self._db.session() as session:
             rows = await session.execute(select(NodeStatus).order_by(NodeStatus.node_id))
-            return [
+            result = [
                 self._row_to_dict(row, stale_after_seconds=stale, down_after_seconds=down)
                 for row in rows.scalars()
             ]
+        if use_cache:
+            await self._cache.set_json("health:fleet", result, ttl_seconds=self._HEALTH_TTL)
+        return result
 
     async def list_events(
         self, node_id: str, *, kind: str | None = None, limit: int = 50

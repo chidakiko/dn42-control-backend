@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -53,7 +54,7 @@ class Peering(Base):
         ForeignKey("nodes.node_id", ondelete="SET NULL"), index=True
     )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    remote_asn: Mapped[int] = mapped_column(Integer, nullable=False)
+    remote_asn: Mapped[int] = mapped_column(BigInteger, nullable=False)  # DN42 ASN 超 int32
     remote_label: Mapped[str | None] = mapped_column(String(128))
     is_internal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -147,7 +148,7 @@ class BgpSession(Base):
         ForeignKey("peerings.id", ondelete="SET NULL"), index=True
     )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    remote_asn: Mapped[int] = mapped_column(Integer, nullable=False)
+    remote_asn: Mapped[int] = mapped_column(BigInteger, nullable=False)  # DN42 ASN 超 int32
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     spec: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

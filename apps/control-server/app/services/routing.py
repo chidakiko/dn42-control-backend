@@ -20,6 +20,7 @@ from dn42_schemas import ObservationStatus, RoutingTableSnapshot
 
 from ..db.engine import Database
 from ..db.models import NodeRouteEntry, NodeRouting, NodeRoutingEvent
+from .cache import Cache
 from .routing_aggregate import aggregate_routes, best_prefix_set, diff_prefix_sets
 
 # 每个节点在时间序列表里最多保留多少条。
@@ -88,8 +89,17 @@ def _iso(value: datetime | None) -> str | None:
 class RoutingStore:
     """读写节点路由全表。所有方法各自开一个 session。"""
 
-    def __init__(self, database: Database) -> None:
+    # 路由聚合 30s 才变一次（agent 300s 上报），Web 轮询期间命中缓存，写入主动失效。
+    _ROUTING_TTL = 30
+
+    def __init__(self, database: Database, *, cache: "Cache | None" = None) -> None:
         self._db = database
+        self._cache = cache or Cache(None)
+
+    async def _bust_routing(self, node_id: str) -> None:
+        """节点路由上报后失效 fleet 总览 + 该节点 summary（事务 commit 之后调用）。"""
+
+        await self._cache.delete("routing:fleet", f"routing:summary:{node_id}")
 
     async def _get_or_create(self, session, node_id: str) -> NodeRouting:
         row = await session.get(NodeRouting, node_id)
@@ -137,11 +147,6 @@ class RoutingStore:
                 return
 
             routes = [route.model_dump(mode="json") for route in snapshot.routes]
-            # churn：与明细表里的上一份前缀集合比对（不再解析旧 JSON blob）。
-            previous = await self._existing_prefixes(session, snapshot.node_id)
-            current = best_prefix_set(routes)
-            announced, withdrawn = diff_prefix_sets(previous, current)
-
             aggregates = aggregate_routes(routes)
             # 过滤前(import-table)RPKI 分布:agent 已聚合好,直接存进 aggregates JSON
             # （无需 DB 迁移）。旧 agent 不带 prefilter 时为 None。
@@ -161,12 +166,17 @@ class RoutingStore:
             row.rpki_invalid = rpki["invalid"]
             row.rpki_not_found = rpki["not_found"]
 
-            # 明细表只在全表内容变化时整体重写，稳定期跳过（省掉上万行反复删插）。
+            # 内容未变（哈希一致）⇒ 前缀集合必然恒等 ⇒ churn=0：跳过 50k 行 DISTINCT +
+            # best_prefix_set + 明细整表重写。只在变化时才付这份代价。
             if new_hash != old_hash:
+                previous = await self._existing_prefixes(session, snapshot.node_id)
+                announced, withdrawn = diff_prefix_sets(previous, best_prefix_set(routes))
                 await session.execute(
                     delete(NodeRouteEntry).where(NodeRouteEntry.node_id == snapshot.node_id)
                 )
                 session.add_all(_route_to_entry(snapshot.node_id, route) for route in routes)
+            else:
+                announced, withdrawn = 0, 0
 
             session.add(
                 NodeRoutingEvent(
@@ -183,6 +193,7 @@ class RoutingStore:
                 )
             )
             await self._trim_history(session, snapshot.node_id)
+        await self._bust_routing(snapshot.node_id)  # commit 后失效 fleet/summary 缓存
 
     async def get_fleet(self) -> dict:
         """跨节点的路由总览：合计规模 + RPKI + 逐节点路由数。
@@ -191,6 +202,9 @@ class RoutingStore:
         总览面板一眼看清整个机群的路由体量与 RPKI 分布。
         """
 
+        cached = await self._cache.get_json("routing:fleet")
+        if cached is not None:
+            return cached
         async with self._db.session() as session:
             rows = await session.execute(select(NodeRouting).order_by(NodeRouting.node_id))
             nodes: list[dict] = []
@@ -224,18 +238,24 @@ class RoutingStore:
                         },
                     }
                 )
-            return {
+            result = {
                 "summary": {**totals, "rpki": rpki_total, "nodes_reporting": reporting},
                 "nodes": nodes,
             }
+        await self._cache.set_json("routing:fleet", result, ttl_seconds=self._ROUTING_TTL)
+        return result
 
     async def get_summary(self, node_id: str) -> dict | None:
+        cache_key = f"routing:summary:{node_id}"
+        cached = await self._cache.get_json(cache_key)
+        if cached is not None:
+            return cached
         async with self._db.session() as session:
             row = await session.get(NodeRouting, node_id)
             if row is None:
                 return None
             aggregates = row.aggregates or {}
-            return {
+            result = {
                 "node_id": row.node_id,
                 "observation": row.observation,
                 "captured_at": _iso(row.captured_at),
@@ -256,6 +276,8 @@ class RoutingStore:
                 "peers": aggregates.get("peers", []),
                 "prefilter": aggregates.get("prefilter"),
             }
+        await self._cache.set_json(cache_key, result, ttl_seconds=self._ROUTING_TTL)
+        return result
 
     async def get_origins(self, node_id: str, *, limit: int = 50) -> dict | None:
         async with self._db.session() as session:
