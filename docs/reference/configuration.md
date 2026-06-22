@@ -23,6 +23,7 @@ Control Server 是一个 dataclass `ControlServerConfig`（`apps/control-server/
 | `DN42_CONTROL_CORS_ORIGINS` | `cors_origins` | tuple[str, …]（逗号分隔） | `("http://localhost:5173", "http://127.0.0.1:5173")` | 浏览器管理面（apps/web）跨源直连本服务的 CORS 白名单。解析见 `_parse_cors_origins`（`config.py:41-49`）：逗号分隔、各项去空白、丢弃空项。**未设置**时返回默认（放行本地 Vite dev server）；**显式设为空字符串**表示关闭跨源（白名单为空元组）。生产填管理面真实源（或 `*`）。 |
 | `DN42_CONTROL_HEALTH_STALE_AFTER` | `health_stale_after_seconds` | float（秒） | `900.0` | 健康判定失联阈值：在此时长内未上报的 `ok` 节点降为 `stale`。浮点解析见 `_env_float`（`config.py:29-38`）：缺失、空白或非法值回退默认。 |
 | `DN42_CONTROL_HEALTH_DOWN_AFTER` | `health_down_after_seconds` | float（秒） | `3600.0` | 健康判定宕机阈值：超过此时长完全无上报判为 `down`，覆盖任何已知状态。解析同 `_env_float`。 |
+| `DN42_CONTROL_REDIS_URL` | `redis_url` | str \| None | `None` | Redis 缓存 DSN（如 `redis://redis:6379/0`）。缓存 desired-state（generation 键）/ 节点健康（10s）/ 路由聚合（30s）等高频读，写时主动失效。**`None`（未设置）即不启用缓存**——所有读直接走 DB（缓存层全程 no-op）；Redis 不可用时同样自动回落 DB，**缓存是旁路、不影响正确性**。docker 全栈方案内置 redis 并已注入此变量。 |
 
 ### 1.1 解析助手（parsing helpers）
 

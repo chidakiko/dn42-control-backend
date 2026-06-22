@@ -12,7 +12,7 @@
 （`redis://redis:6379/0`）；缓存是旁路，redis 不可用时自动回落 DB，不影响正确性。
 
 > node-agent 不在此编排：生产里 agent 跑宿主原生 venv + systemd、直连宿主 docker.sock；
-> 本栈只含控制面 + 库 + 缓存。systemd 生产部署见 [部署指南](../../docs/guides/deployment.md)。
+> 本栈只含控制面 + 库 + 缓存。systemd 生产部署见 [部署指南](../docs/guides/deployment.md)。
 
 ## 启动
 

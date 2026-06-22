@@ -104,4 +104,4 @@ flowchart TB
 
 ## 启动与配置
 
-`app/main.py:create_app()` 装配 FastAPI、lifespan（初始化 DB、可选 seed、装配 service）、`/healthz` DB 探针、以及审计 admin 写的中间件。开发态启动用 `Base.metadata.create_all` 建表；**生产用 `alembic upgrade head`**（见 [../guides/upgrades-and-migrations.md](../guides/upgrades-and-migrations.md)）。全部 env 见 [../reference/configuration.md](../reference/configuration.md)。
+`app/main.py:create_app()` 装配 FastAPI、lifespan（初始化 DB + Redis 缓存、可选 seed、装配 service）、`/healthz` DB 探针、以及审计 admin 写的中间件。后端栈是 **PostgreSQL + Redis**：DB 经 `DN42_CONTROL_DATABASE_URL`，缓存经 `DN42_CONTROL_REDIS_URL`（`services/cache.py`，未配置 / 不可用即全程 no-op 回落 DB，缓存是旁路）。启动用 `Base.metadata.create_all` 建表（与 `alembic upgrade head` 等价，alembic 链已可从空库跑通）（见 [../guides/upgrades-and-migrations.md](../guides/upgrades-and-migrations.md)）。全部 env 见 [../reference/configuration.md](../reference/configuration.md)。

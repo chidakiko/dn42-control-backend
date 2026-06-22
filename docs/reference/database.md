@@ -493,11 +493,14 @@ append-only Admin 写操作记录。`apps/control-server/app/db/models/audit.py:
 驱动跑迁移（`+aiosqlite`→空、`+asyncpg`→`+psycopg2`、`+asyncmy`→`+pymysql`）；`target_metadata`
 = `Base.metadata`。
 
-**生产用 `alembic upgrade head` 管理 schema 变更；控制服务器启动期走
-`Base.metadata.create_all`（`apps/control-server/app/main.py:55`），仅适合 MVP / 本地 / 测试。**
-两条路径并存的后果：`create_all` 建库只跑「最新模型」、不跑迁移脚本里的数据剥离 / 列删除逻辑，
-因此对破坏性 schema 变更（如删列），`create_all` 库需手动 `ALTER TABLE`——例如迁移
-`a3b4c5d6e7f8` 注明 `create_all` 库（pvg2）须手动 `DROP COLUMN rpki_unknown` 后再上新代码。
+**后端库是 PostgreSQL**（ASN 等列用 `BigInteger`——DN42 ASN 4242420000+ 超 int32）。schema 由
+启动期 `Base.metadata.create_all`（`main.py:55`）或 `alembic upgrade head` 建——**两者现已等价**：
+alembic 链补全（初始迁移补建 `node_routing`/`node_routing_events`）后可从空库一路跑通，产出与
+`create_all` 逐表逐列一致。
+
+> 历史坑（早期 SQLite + create_all 起库期）：`create_all` 只建「最新模型」、不跑迁移里的数据剥离 /
+> 列删除，故破坏性变更（删列）在 create_all 库需手动 `ALTER TABLE`——如迁移 `a3b4c5d6e7f8` 的
+> `DROP COLUMN rpki_unknown`。现已迁到 PostgreSQL，新部署 create_all/alembic 任一即可。
 
 迁移历史（按链表顺序）：
 

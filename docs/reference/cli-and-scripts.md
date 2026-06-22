@@ -79,7 +79,7 @@
 
 | 脚本 | 作用 |
 | --- | --- |
-| `provision-three-node.py` | 等控制面 `/healthz` 就绪后，向 `POST /api/v1/admin/provision` 灌入 3 个节点（compose 三节点编排用） |
+| `provision-three-node.py` | 等控制面 `/healthz` 就绪后，向 `POST /api/v1/admin/provision` 灌入 3 个节点的本地 lab（独立脚本，对任意运行中的控制面用，如 docker 全栈方案起的控制面） |
 | `render-local-three-node.py` | 把三节点 lab 渲染到磁盘（独立渲染，不依赖控制面） |
 | `render-local-two-node.py` | 两节点 iBGP 拓扑本地渲染 |
 | `render-two-internal-one-ebgp-demo.py` | 2 内部 + 1 外部 eBGP 对端的多场景渲染 |
