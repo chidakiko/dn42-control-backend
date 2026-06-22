@@ -39,6 +39,12 @@ packages = []
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+# 默认规则集（E4/E7/E9 + F）。忽略 E402：本项目多数模块刻意用「from __future__ import
+# annotations + 模块文档串 + imports」的写法，使后续 import 全报 module-import-not-at-top；
+# 这是既定风格、非缺陷。其余（F 未用 import/变量、E7 语句、E9 语法）仍强制。
+ignore = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "apps/node-agent/agent/tests", "apps/control-server/app/tests"]
 asyncio_mode = "auto"

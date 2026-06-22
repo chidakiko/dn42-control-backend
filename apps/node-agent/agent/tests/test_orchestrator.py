@@ -28,7 +28,7 @@ from agent.collectors.docker import DockerObserver, ObservedProject
 from agent.collectors.inventory import build_host_inventory
 from agent.core.config import AgentConfig
 from agent.core.identity import LocalAgentIdentity, load_identity, save_identity
-from agent.core.naming import node_project_name, service_container_name
+from agent.core.naming import node_project_name
 from agent.core.paths import AgentPaths
 from agent.orchestrator import run_once
 from agent.apply.executor import DeployResult

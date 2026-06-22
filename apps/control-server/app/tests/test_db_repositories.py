@@ -22,7 +22,7 @@ from sqlalchemy import select
 
 from app.core.config import ControlServerConfig
 from app.db.engine import Database
-from app.db.models import AgentToken, Generation, Node
+from app.db.models import Generation, Node
 from app.services.desired_state import DesiredStateStore
 from app.services.tokens import TokenStore
 

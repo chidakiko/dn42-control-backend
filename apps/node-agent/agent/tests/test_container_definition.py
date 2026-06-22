@@ -53,7 +53,6 @@ def test_hash_changes_when_underlay_changes() -> None:
     data = state.model_dump(mode="json")
     data["runtime"]["underlay"]["subnet"] = "10.254.99.0/24"
     data["runtime"]["underlay"]["gateway"] = "10.254.99.1"
-    rpki = next(s for s in data["runtime"]["services"] if s["name"] == "dn42-rpki-cache")
     netns_ip = "10.254.99.3"
     data["runtime"]["rpki"]["listen_host"] = netns_ip
     changed = state.__class__.model_validate(data)

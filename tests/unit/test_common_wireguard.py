@@ -48,14 +48,6 @@ class TestValidateWireguardKey:
         with pytest.raises(TypeError):
             validate_wireguard_key(b"x" * 44)  # type: ignore[arg-type]
 
-    def test_rejects_invalid_base64_decode(self) -> None:
-        # 44 char, 末位 '='，符合正则但 b64decode 严格模式会拒绝部分形态
-        bad = "AA" + "/" * 41 + "="
-        # 这个应能成功解码到 32 字节；构造一个解码后非 32 字节的几乎不可能
-        # （44 char base64 = 32 byte），所以这里只验证我们对 binascii.Error
-        # 路径有覆盖：传入合法字符但不合法 padding
-        # 见 test_rejects_missing_padding
-
 
 class TestIsWireguardKey:
     def test_truthy(self) -> None:

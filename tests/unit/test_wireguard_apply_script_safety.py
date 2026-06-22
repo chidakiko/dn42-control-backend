@@ -43,7 +43,7 @@ def test_apply_script_uses_in_place_sync() -> None:
         script = render_wireguard_apply_script(interface)
         assert "wg syncconf" in script, interface.name
         # 接口只在缺失时创建，存在时绝不重建。
-        assert f'ip link show "${{IF}}" >/dev/null 2>&1 || ip link add' in script, interface.name
+        assert 'ip link show "${IF}" >/dev/null 2>&1 || ip link add' in script, interface.name
 
 
 def test_apply_script_has_no_disruptive_commands() -> None:

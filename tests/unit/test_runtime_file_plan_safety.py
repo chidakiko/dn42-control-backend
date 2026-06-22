@@ -18,7 +18,6 @@ agent 会以 ``RenderedFile`` 为输入、以某个受控 ``base_dir`` 为输出
   目录”、返回 outcome 包含 create / delete 汇总等语义。
 """
 
-import os
 from pathlib import Path
 
 import pytest

@@ -17,7 +17,6 @@ from agent.collectors.routing import (
     RouteTableObserver,
     RpkiIndex,
     aggregate_prefilter,
-    build_routing_observer,
     classify_reject_reason,
     collect_routing_snapshot,
     parse_bird_routes,

@@ -5,8 +5,37 @@ on:
     branches: [main]
   pull_request:
 
+# 同分支新 push 取消仍在跑的旧 run，省额度、快反馈。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# 流水线分三段（质量门 → 测试 → 构建），后段 needs 前段，前面挂了后面不浪费：
+#
+#   quality ─┬─ test ──────────┬─ build-wheels
+#            └─ test-postgres ──┴─ build-image
+#   quality ─── build-web
+#
 jobs:
+  # ===== 1) 编码质量门：最快、最先跑，红了直接拦住测试与构建 =====
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install ruff
+        run: pip install "ruff>=0.8"
+      - name: Ruff lint
+        run: ruff check apps packages tests
+      - name: Byte-compile（语法门）
+        run: python -m compileall -q apps packages tests
+
+  # ===== 2) 测试 =====
   test:
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -25,14 +54,14 @@ jobs:
             -e apps/control-server \
             -e apps/node-agent \
             -e ".[dev]"
-      - name: Run tests
+      - name: Run tests (SQLite)
         run: python -m pytest
-      - name: Byte-compile
-        run: python -m compileall apps packages tests
 
-  # control-server 套件**额外跑一遍在真 PostgreSQL 上**：SQLite 宽松会藏住 int32 溢出、
-  # FOR UPDATE 锁外连接可空侧等「PG 严格才暴露」的 bug；这个 job 让它们在 CI 就被抓到。
+  # control-server 套件**额外在真 PostgreSQL 上再跑一遍**：SQLite 宽松会藏住 int32 溢出、
+  # FOR UPDATE 锁外连接可空侧、并发竞态等「PG 严格才暴露」的 bug；这个 job 让它们在 CI 就被抓到。
+  # （asyncpg 由 -e apps/control-server 的依赖带入。）
   test-postgres:
+    needs: quality
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -67,7 +96,9 @@ jobs:
           DN42_CONTROL_TEST_DATABASE_URL: postgresql+asyncpg://dn42:ci@localhost:5432/dn42_test
         run: python -m pytest apps/control-server
 
+  # ===== 3) 构建产物：测试全绿才出 =====
   build-wheels:
+    needs: [test, test-postgres]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -86,7 +117,29 @@ jobs:
           name: python-wheels
           path: dist/*.whl
 
+  # control-server 容器镜像：用部署同款 Dockerfile 构建（context = 仓库根），
+  # 验证镜像可成功构建 + 应用可导入。不推送 registry（CI 只做构建校验）。
+  build-image:
+    needs: [test, test-postgres]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - name: Build control-server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.control-server
+          push: false
+          load: true
+          tags: dn42-control-server:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test（镜像内应用可导入）
+        run: docker run --rm dn42-control-server:ci python -c "import app.main"
+
   build-web:
+    needs: quality
     runs-on: ubuntu-latest
     defaults:
       run:

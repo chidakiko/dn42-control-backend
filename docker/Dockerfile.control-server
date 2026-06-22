@@ -1,5 +1,5 @@
 # DN42 Control Server 镜像。
-# build context = 仓库根：docker build -f deploy/docker-compose/Dockerfile.control-server .
+# build context = 仓库根：docker build -f docker/Dockerfile.control-server .
 #
 # 设计：首方 packages 与应用本体直接 pip install，第三方依赖由各自
 # pyproject.toml 声明并由 pip 解析——镜像里不维护手写依赖清单，
