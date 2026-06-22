@@ -10,14 +10,14 @@
 
 系统把 DN42 节点管理拆成一个持续运转的闭环：
 
-1. 管理端通过 Admin API 写入节点、peering、接口、BGP session、DNS zone 和 token（或用 provision / 导入工具整节点灌入）。
+1. 管理端通过 Admin API 或 Web UI 写入节点、peering、接口、BGP session、DNS 和 token（或用 provision / 导入工具整节点灌入）。
 2. Control Server 把数据库中的事实数据合成为一份新的 `DesiredState`，保存为递增的 generation，并通过节点私有 WebSocket 通道通知对应 Agent。
 3. Node Agent（常驻守护进程）拉取 `DesiredState`，渲染本地配置文件，比较当前文件和容器状态，按需要写入文件、重建容器、热重载服务，并把快照 / 对账 / 应用结果回报给 Control Server。
-4. Control Server 持久化上报数据，推导每个节点的健康状态（`ok` / `stale` / `degraded` / `unknown`），供管理端查询。
+4. Control Server 持久化上报数据，推导每个节点的健康状态（`ok` / `stale` / `degraded` / `down` / `unknown`），供管理端查询。
 
 ```mermaid
 flowchart LR
-    operator[管理员或自动化脚本]
+    operator[管理员 / 自动化脚本 / Web UI]
     server[Control Server]
     db[(数据库)]
     agent[Node Agent]
@@ -42,13 +42,14 @@ flowchart LR
 | 从零上手 | [docs/tutorials/01-quickstart.md](docs/tutorials/01-quickstart.md) |
 | 部署到生产 | [docs/guides/deployment.md](docs/guides/deployment.md) |
 | 接入节点、看健康、排错 | [docs/guides/node-onboarding.md](docs/guides/node-onboarding.md) · [docs/guides/monitoring-and-troubleshooting.md](docs/guides/monitoring-and-troubleshooting.md) |
+| 用 Web 管理界面 | [docs/guides/web-ui.md](docs/guides/web-ui.md) |
 | 查接口 / 配置 / 字段 / 表 | [docs/reference/](docs/reference/) |
 | 理解架构与数据流 | [docs/internals/architecture.md](docs/internals/architecture.md) |
 | 改代码 / 跑测试 | [docs/contributing.md](docs/contributing.md) |
 
 ## Runtime 目标形态
 
-节点 runtime 使用共享 network namespace。`router-netns` 提供网络命名空间，`wg-gateway` 在其中创建 WireGuard 接口，`bird-router` 在同一网络视图中运行 BIRD，`dns` 可选运行 CoreDNS，`rpki-cache` 提供 RPKI 数据。
+节点 runtime 使用共享 network namespace。`router-netns` 提供网络命名空间，`wg-gateway` 在其中创建 WireGuard 接口，`bird-router` 在同一网络视图中运行 BIRD 2，`dns` 可选运行 CoreDNS，`rpki-cache` 提供 RPKI/ROA 数据。容器**不用 docker-compose**，由 Agent 直接通过 Docker Engine API 按 `DesiredState` 创建 / 重建。
 
 ```mermaid
 flowchart TB
@@ -72,12 +73,13 @@ flowchart TB
 | --- | --- |
 | `apps/control-server` | FastAPI 控制服务：API、数据库模型、token、DesiredState 生成、注册审批、健康视图、WebSocket 事件 |
 | `apps/node-agent` | 节点执行器：注册、拉取、渲染、规划、部署、本机收敛、采集和上报；默认常驻守护进程 |
+| `apps/web` | Web 管理界面：仪表盘、节点详情、互联 / 接入向导、审批、provision、审计 |
 | `packages/dn42_schemas` | Pydantic 协议模型：`DesiredState`、Agent 注册、快照、对账报告等 |
 | `packages/dn42_templates` | 把 `DesiredState` 渲染为 BIRD、WireGuard、CoreDNS 和脚本 |
 | `packages/dn42_runtime` | 渲染文件、写盘计划、router Dockerfile 渲染 |
 | `packages/dn42_common` | 公共校验、命名、label、community 与 Jinja 工具 |
 | `migrations` | Alembic 数据库迁移 |
-| `deploy` | docker compose 三节点编排与 systemd 生产单元 |
+| `deploy` | systemd 生产单元、agent wheel 构建与滚动升级脚本、寻址 / 拓扑运维脚本、节点状态样本 |
 | `scripts` | 开发辅助与节点导入工具 |
 | `examples/rendered-hkg1` | hkg1 示例节点的渲染产物（golden 样本） |
 | `tests` | 共享包单元测试与多节点集成测试 |

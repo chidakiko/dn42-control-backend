@@ -1,12 +1,18 @@
-// Documentation screenshots for docs/web-ui.md.
+// Documentation screenshots for docs/guides/web-ui.md.
 //
-// Captures the admin UI (zh locale) into docs/images/. Requires a local stack:
-//   - control-server seeded on :8000 (admin token "dev-admin-token", seed node edge1)
-//   - vite dev on :5173
-// Run from apps/web:  node scripts/doc-shots.mjs
+// Captures the admin UI (zh locale) into docs/images/. Every shot is scoped to
+// the component it illustrates (a card / panel / dialog) — never the whole
+// browser window with the sidebar — so the docs stay focused and legible.
 //
-// The peer "一键互联" wizard is driven step-by-step (fill minimal fields, Next)
-// and each step's modal is captured.
+// Requires a local stack with DEMO DATA already seeded (the production lifespan
+// no longer auto-seeds, and routing/trends/DNS pages are empty without agent
+// reports):
+//   1. control-server on :8001  (admin token "dev-admin-token", CORS *)
+//   2. python apps/web/scripts/seed_docshots.py   (provisions edge1 + feeds data)
+//   3. vite dev on :5174
+// Then, from apps/web:  node scripts/doc-shots.mjs
+//
+// See docs/guides/web-ui.md (## 截图怎么再生成) for the full one-liners.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 
@@ -20,7 +26,7 @@ mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 
 async function newCtx() {
-	const ctx = await browser.newContext({ viewport: { width: 1366, height: 920 }, colorScheme: 'light' });
+	const ctx = await browser.newContext({ viewport: { width: 1320, height: 1000 }, colorScheme: 'light', deviceScaleFactor: 2 });
 	await ctx.addInitScript(
 		(a) => {
 			localStorage.setItem('dn42.admin.token', a.t);
@@ -33,62 +39,96 @@ async function newCtx() {
 	return ctx;
 }
 
-// --- simple full-page / viewport shots ---
-const pages = [
-	{ name: 'wui-login', path: '/login', full: false, auth: false },
-	{ name: 'wui-dashboard', path: '/', full: true },
-	{ name: 'wui-nodes', path: '/nodes', full: true },
-	{ name: 'wui-registrations', path: '/registrations', full: true },
-	{ name: 'wui-enrollment', path: '/enrollment-tokens', full: true },
-	{ name: 'wui-provision', path: '/provision', full: true },
-	{ name: 'wui-audit', path: '/audit', full: true }
+// Screenshot a single element (focused) rather than the full page.
+async function shotEl(page, selector, name, { nth = 0 } = {}) {
+	const el = page.locator(selector).nth(nth);
+	await el.waitFor({ state: 'visible', timeout: 8000 });
+	await el.scrollIntoViewIfNeeded();
+	await page.waitForTimeout(500); // let charts/sparklines settle
+	await el.screenshot({ path: `${OUT}/${name}.png` });
+	console.log('shot', name);
+}
+
+async function open(ctx, path) {
+	const page = await ctx.newPage();
+	await page.goto(BASE + path, { waitUntil: 'networkidle' });
+	await page.waitForTimeout(1200);
+	return page;
+}
+
+// --- focused, single-element shots on standalone pages ---
+// [name, path, selector] — selector is the component the doc section describes.
+const shots = [
+	['wui-login', '/login', '.login', false],
+	['wui-dashboard', '/', '.health-card', true],
+	['wui-fleet-routing', '/', '.routing-card', true],
+	['wui-nodes', '/nodes', 'main .card', true],
+	['wui-registrations', '/registrations', 'main .card', true],
+	['wui-enrollment', '/enrollment-tokens', 'main .card', true],
+	['wui-provision', '/provision', 'main .card', true],
+	['wui-audit', '/audit', 'main .card', true]
 ];
 
-for (const s of pages) {
+for (const [name, path, selector] of shots) {
 	try {
 		const ctx = await newCtx();
-		const page = await ctx.newPage();
-		await page.goto(BASE + s.path, { waitUntil: 'load' });
-		await page.waitForTimeout(1800);
-		await page.screenshot({ path: `${OUT}/${s.name}.png`, fullPage: s.full });
+		const page = await open(ctx, path);
+		await shotEl(page, selector, name);
 		await ctx.close();
-		console.log('shot', s.name);
 	} catch (e) {
-		console.error('FAIL', s.name, e.message);
+		console.error('FAIL', name, e.message);
 	}
 }
 
-// --- node detail tabs (overview / peerings / interfaces / internal) ---
+// --- DNS groups: expand a group's zones + a zone's records, then capture the
+//     whole content column (groups → zones → records) sans sidebar. ---
+try {
+	const ctx = await newCtx();
+	const page = await open(ctx, '/dns-groups');
+	// row action #0 = "区域" (select group) → reveals the zones card
+	await page.locator('table tbody tr').first().locator('.actions button').first().click();
+	await page.waitForTimeout(700);
+	// open the records of the populated forward zone (reverse zone sorts first but
+	// has no records) → reveals the records panel below the zones table
+	await page.locator('.card').last().locator('tr', { hasText: 'example.dn42' })
+		.locator('.actions button').first().click();
+	await page.waitForTimeout(700);
+	await shotEl(page, 'main', 'wui-dns-groups');
+	await ctx.close();
+} catch (e) {
+	console.error('FAIL wui-dns-groups', e.message);
+}
+
+// --- node detail tabs — capture the tab's content card (or its headline
+//     component), which excludes the page chrome and sidebar. ---
+// TABS index: 0 overview · 1 peerings · 2 interfaces · 3 bgp · 4 internal ·
+//             5 routing · 6 dns · 7 generations · 8 status · 9 desired · 10 tokens
 const tabShots = [
-	{ name: 'wui-node-overview', tab: null, full: false },
-	{ name: 'wui-node-peerings', tab: 1, full: true },
-	{ name: 'wui-node-interfaces', tab: 2, full: true },
-	{ name: 'wui-node-internal', tab: 4, full: true }
+	{ name: 'wui-node-overview', tab: null, sel: 'main .card' },
+	{ name: 'wui-node-interfaces', tab: 2, sel: 'main .card' },
+	{ name: 'wui-node-internal', tab: 4, sel: 'main .card' },
+	{ name: 'wui-node-routing', tab: 5, sel: '.donuts' },
+	{ name: 'wui-node-dns', tab: 6, sel: 'main .card' }
 ];
 for (const s of tabShots) {
 	try {
 		const ctx = await newCtx();
-		const page = await ctx.newPage();
-		await page.goto(`${BASE}/nodes/${NODE}`, { waitUntil: 'load' });
-		await page.waitForTimeout(1800);
+		const page = await open(ctx, `/nodes/${NODE}`);
 		if (s.tab !== null) {
 			await page.locator('.tabs .tab').nth(s.tab).click();
 			await page.waitForTimeout(1200);
 		}
-		await page.screenshot({ path: `${OUT}/${s.name}.png`, fullPage: s.full });
+		await shotEl(page, s.sel, s.name);
 		await ctx.close();
-		console.log('shot', s.name);
 	} catch (e) {
 		console.error('FAIL', s.name, e.message);
 	}
 }
 
-// --- peer interconnect wizard, step by step ---
+// --- peer interconnect wizard, step by step (the .dialog is already focused) ---
 try {
 	const ctx = await newCtx();
-	const page = await ctx.newPage();
-	await page.goto(`${BASE}/nodes/${NODE}`, { waitUntil: 'load' });
-	await page.waitForTimeout(1800);
+	const page = await open(ctx, `/nodes/${NODE}`);
 
 	const fill = async (label, value) =>
 		page.locator('.dialog label.field', { hasText: label }).first().locator('input,textarea').fill(value);
