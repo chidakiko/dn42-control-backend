@@ -1,0 +1,23 @@
+[Interface]
+PrivateKey = {{ private_key_ref }}
+{% if listen_port %}
+ListenPort = {{ listen_port }}
+{% endif %}
+{% if mtu %}
+MTU = {{ mtu }}
+{% endif %}
+
+[Peer]
+PublicKey = {{ peer.public_key }}
+{% if peer.preshared_key_ref %}
+PresharedKey = {{ peer.preshared_key_ref }}
+{% endif %}
+{% if peer.endpoint %}
+Endpoint = {{ peer.endpoint }}
+{% endif %}
+{% if peer.allowed_ips %}
+AllowedIPs = {{ peer.allowed_ips | join(', ') }}
+{% endif %}
+{% if peer.persistent_keepalive_seconds %}
+PersistentKeepalive = {{ peer.persistent_keepalive_seconds }}
+{% endif %}

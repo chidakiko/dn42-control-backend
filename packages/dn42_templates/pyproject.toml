@@ -1,0 +1,21 @@
+[project]
+name = "dn42-templates"
+version = "1.0.0"
+description = "Configuration renderers for DN42 control backend"
+requires-python = ">=3.11"
+dependencies = [
+  "dn42-common",
+  "dn42-schemas",
+  "dn42-runtime",
+  "jinja2>=3.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dn42_templates"]
+# config-bird2 / config-coredns / config-scripts / config-wireguard 均在
+# dn42_templates 包目录内，packages 已整树纳入；不要再 force-include 重复加入
+# ——新版 hatchling 会因同一路径重复加入而硬报错（ValueError: A second file）。

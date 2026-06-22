@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IF="{{ interface_name }}"
+echo "[dummy] applying ${IF}"
+ip link show "${IF}" >/dev/null 2>&1 || ip link add dev "${IF}" type dummy
+ip link set "${IF}" up
+{% for command in address_commands %}
+{{ command }}
+{% endfor %}
+echo "[dummy] ${IF} applied"
+ip addr show dev "${IF}"

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+/opt/dn42/scripts/wg/apply-dn42-lo.sh
+{% for script in interface_scripts %}
+{{ script }}
+{% endfor %}
+
+echo "[done] WireGuard links applied"
+wg show

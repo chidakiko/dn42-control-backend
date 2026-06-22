@@ -1,0 +1,20 @@
+{# 这里保持为独立文件，便于按节点生成 OSPF interface 列表。 #}
+area 0 {
+    # 由模板生成
+{# 邻居接口列表由上下文层预先展平，模板不再负责拼 Ansible 风格变量。 #}
+{% for entry in ospf_neighbor_interfaces %}
+    interface "{{ entry.name }}" {
+{% if entry.cost is not none %}
+        cost {{ entry.cost }};
+{% else %}
+        cost include "{{ automation_root_dir }}/igpping/rxcost/{{ entry.peer_node }}.conf";
+{% endif %}
+        type {{ entry.iface_type|default("ptp") }};
+    };
+{% endfor %}
+{% for entry in stub_interface_names %}
+    interface "{{ entry }}" {
+        stub on;
+    };
+{% endfor %}
+};
