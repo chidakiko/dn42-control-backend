@@ -1,0 +1,38 @@
+# DN42 Control Server 镜像。
+# build context = 仓库根：docker build -f deploy/docker-compose/Dockerfile.control-server .
+#
+# 设计：首方 packages 与应用本体直接 pip install，第三方依赖由各自
+# pyproject.toml 声明并由 pip 解析——镜像里不维护手写依赖清单，
+# 包依赖变更不再需要同步改 Dockerfile。
+FROM python:3.13-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# 首方源码：packages + control-server 应用。
+COPY packages/ /app/packages/
+COPY apps/control-server/ /app/apps/control-server/
+COPY alembic.ini /app/alembic.ini
+COPY migrations/ /app/migrations/
+
+# 一条 pip 命令同时给出全部本地包：dn42-schemas 等对 dn42-common 的依赖
+# 由命令行中的本地候选满足，不会去 PyPI 找同名包。
+RUN pip install --no-cache-dir \
+    /app/packages/dn42_common \
+    /app/packages/dn42_schemas \
+    /app/packages/dn42_runtime \
+    /app/packages/dn42_templates \
+    /app/apps/control-server
+
+WORKDIR /app/apps/control-server
+
+EXPOSE 8000
+
+# 容器内监听 0.0.0.0:8000（IPv4）；宿主双栈由 compose 端口双发布实现（docker-proxy 同时在
+# 宿主 0.0.0.0:8000 与 [::]:8000 监听、都转进容器）。⚠️ 不要用 uvicorn --host ::：uvicorn
+# 显式置 IPV6_V6ONLY，:: 实为 IPv6-only（无视系统 bindv6only=0），会让 IPv4 全断。
+# DB / token 等通过 DN42_CONTROL_* 环境变量注入。
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

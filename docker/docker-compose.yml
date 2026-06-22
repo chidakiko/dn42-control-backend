@@ -1,0 +1,81 @@
+# DN42 控制面**标准全栈**编排：control-server + PostgreSQL + Redis。
+#
+# 当前控制面后端架构的通用参考方案：无中国镜像源、无 SQLite 遗留、无公网暴露，
+# 端口默认仅绑 127.0.0.1，适合本地验证 / 通用部署（生产再按需收窄/前置反代）。
+#
+#   control-server  FastAPI，连 postgres + redis，仅监听容器内 0.0.0.0:8000，
+#                   宿主侧默认只发布到 127.0.0.1:${CONTROL_PORT}。
+#   postgres        真后端库（16-alpine，持久卷，仅容器网内可达）。
+#   redis           缓存（7-alpine，maxmemory+LRU，不持久化；缓存是旁路，
+#                   不可用 control-server 自动回落 DB）。
+#
+# node-agent 不在此编排（生产里 agent 跑宿主原生 venv+systemd，直连宿主
+# docker.sock；本地全栈验证只需控制面 + 库 + 缓存）。
+#
+# 用法（build context = 仓库根；先把 .env.example 复制为 .env 填好密码/token）：
+#   cp docker/.env.example docker/.env   # 改 POSTGRES_PASSWORD / DN42_CONTROL_ADMIN_TOKEN
+#   docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dn42}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-dn42_control}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dn42} -d ${POSTGRES_DB:-dn42_control}"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # 缓存内存上限 + LRU 淘汰，不持久化（无 AOF/RDB）：满了淘汰旧键即可。
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  control-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.control-server
+    image: dn42-control-server:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DN42_CONTROL_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dn42}:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/${POSTGRES_DB:-dn42_control}
+      DN42_CONTROL_REDIS_URL: redis://redis:6379/0
+      DN42_CONTROL_ENROLLMENT_TOKEN: ${DN42_CONTROL_ENROLLMENT_TOKEN:?set in .env}
+      DN42_CONTROL_ADMIN_TOKEN: ${DN42_CONTROL_ADMIN_TOKEN:?set in .env}
+      DN42_CONTROL_CORS_ORIGINS: ${DN42_CONTROL_CORS_ORIGINS:-*}
+      DN42_CONTROL_HEALTH_STALE_AFTER: "900"
+    # 默认仅发布到本地回环；对外暴露请改 ${CONTROL_BIND} 或在前置反代/安全组收窄。
+    ports:
+      - "${CONTROL_BIND:-127.0.0.1}:${CONTROL_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 5s
+
+volumes:
+  pg-data:  # PostgreSQL 数据目录（Redis 不持久化，无卷）。
