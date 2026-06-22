@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
+from dn42_common import validate_ipv6_link_local_address
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 
 from ....core.events import EventBus
@@ -26,6 +27,14 @@ from ._helpers import broadcast_change, materialize_change
 router = APIRouter()
 
 
+def _check_link_local(value: str | None) -> str | None:
+    """节点级 LLA 必须是合法 IPv6 link-local（fe80::/10，不带 %zone）；空值放行。"""
+
+    if value is not None:
+        validate_ipv6_link_local_address(value)
+    return value
+
+
 class NodeIn(BaseModel):
     """新增节点的请求体。``base_template`` 必须是合法 DesiredState 中非子表的字段集合。"""
 
@@ -37,11 +46,17 @@ class NodeIn(BaseModel):
     site: str | None = None
     loopback_ipv4: str | None = None
     loopback_ipv6: str | None = None
+    link_local: str | None = None
     ipv4_prefixes: list[str] = Field(default_factory=list)
     ipv6_prefixes: list[str] = Field(default_factory=list)
     inventory: dict[str, Any] = Field(default_factory=dict)
     labels: dict[str, str] = Field(default_factory=dict)
     base_template: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("link_local")
+    @classmethod
+    def _validate_link_local(cls, value: str | None) -> str | None:
+        return _check_link_local(value)
 
 
 class NodePatch(BaseModel):
@@ -52,11 +67,17 @@ class NodePatch(BaseModel):
     site: str | None = None
     loopback_ipv4: str | None = None
     loopback_ipv6: str | None = None
+    link_local: str | None = None
     ipv4_prefixes: list[str] | None = None
     ipv6_prefixes: list[str] | None = None
     inventory: dict[str, Any] | None = None
     labels: dict[str, str] | None = None
     base_template: dict[str, Any] | None = None
+
+    @field_validator("link_local")
+    @classmethod
+    def _validate_link_local(cls, value: str | None) -> str | None:
+        return _check_link_local(value)
 
 
 class NodeOut(BaseModel):
@@ -68,6 +89,7 @@ class NodeOut(BaseModel):
     site: str | None
     loopback_ipv4: str | None
     loopback_ipv6: str | None
+    link_local: str | None
     ipv4_prefixes: list[str]
     ipv6_prefixes: list[str]
     inventory: dict[str, Any]
@@ -88,6 +110,7 @@ def _node_out(node: Node) -> NodeOut:
         site=node.site,
         loopback_ipv4=node.loopback_ipv4,
         loopback_ipv6=node.loopback_ipv6,
+        link_local=node.link_local,
         ipv4_prefixes=list(node.ipv4_prefixes or []),
         ipv6_prefixes=list(node.ipv6_prefixes or []),
         inventory=dict(node.inventory or {}),
@@ -126,6 +149,7 @@ async def create_node(
             site=payload.site,
             loopback_ipv4=payload.loopback_ipv4,
             loopback_ipv6=payload.loopback_ipv6,
+            link_local=payload.link_local,
             ipv4_prefixes=list(payload.ipv4_prefixes),
             ipv6_prefixes=list(payload.ipv6_prefixes),
             inventory=dict(payload.inventory),
@@ -162,7 +186,7 @@ async def update_node(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown node {node_id}")
 
         data = payload.model_dump(exclude_unset=True)
-        for field in ("asn", "router_id", "site", "loopback_ipv4", "loopback_ipv6"):
+        for field in ("asn", "router_id", "site", "loopback_ipv4", "loopback_ipv6", "link_local"):
             if field in data:
                 setattr(node, field, data[field])
         for field in ("ipv4_prefixes", "ipv6_prefixes", "inventory", "labels", "base_template"):

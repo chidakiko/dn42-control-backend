@@ -124,6 +124,12 @@ def _check_metrics(config: AgentConfig) -> Check:
             "last_duration_seconds": metrics.last_duration_seconds,
             "last_generation": metrics.last_generation,
             "last_reconcile_at": metrics.last_reconcile_at,
+            # 背景循环耗时 + 进程自观测（self-monitor 写入）——排障一眼看忙不忙、谁慢了。
+            "last_routing_collect_seconds": metrics.last_routing_collect_seconds,
+            "last_reresolve_seconds": metrics.last_reresolve_seconds,
+            "cpu_percent": metrics.cpu_percent,
+            "rss_mb": metrics.rss_mb,
+            "self_observed_at": metrics.self_observed_at,
         },
         critical=False,
     )

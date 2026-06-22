@@ -44,6 +44,10 @@ class Node(Base):
     router_id: Mapped[str] = mapped_column(String(64), nullable=False)
     loopback_ipv4: Mapped[str | None] = mapped_column(String(64))
     loopback_ipv6: Mapped[str | None] = mapped_column(String(64))
+    # 节点级 IPv6 link-local（fe80::/10，不带 %zone）。**外部 eBGP** WG 接口的单一真相源：
+    # materializer 把 <link_local>/64 派生到这些接口 addresses（见 NodeSpec.link_local /
+    # materializer._interface_payload）。内部互联（iBGP/OSPF）用各自 LL，不取本字段。
+    link_local: Mapped[str | None] = mapped_column(String(64))
     ipv4_prefixes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     ipv6_prefixes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 

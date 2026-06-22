@@ -2,11 +2,29 @@ from __future__ import annotations
 
 """把各 collector 输出聚合成 RuntimeSnapshot。"""
 
-from dn42_schemas import DesiredState, ObservationStatus, RuntimeSnapshot
+from dn42_schemas import AgentSelfMetrics, DesiredState, ObservationStatus, RuntimeSnapshot
 
 from ..core.clock import utc_now_iso
+from ..metrics import ReconcileMetrics
 from .docker import DockerObserver, ObservedProject
 from .network import BgpObserver, WireGuardObserver
+
+
+def _to_self_metrics(metrics: ReconcileMetrics) -> AgentSelfMetrics:
+    """把本地 ReconcileMetrics 映射成上报用的 AgentSelfMetrics（字段一一对应）。"""
+
+    return AgentSelfMetrics(
+        cpu_percent=metrics.cpu_percent,
+        rss_mb=metrics.rss_mb,
+        last_routing_collect_seconds=metrics.last_routing_collect_seconds,
+        last_reresolve_seconds=metrics.last_reresolve_seconds,
+        last_reconcile_duration_seconds=metrics.last_duration_seconds,
+        total_reconciles=metrics.total_reconciles,
+        total_failures=metrics.total_failures,
+        consecutive_failures=metrics.consecutive_failures,
+        self_observed_at=metrics.self_observed_at,
+        last_reconcile_at=metrics.last_reconcile_at,
+    )
 
 
 def build_runtime_snapshot(
@@ -16,6 +34,7 @@ def build_runtime_snapshot(
     docker_observer: DockerObserver | None = None,
     wireguard_observer: WireGuardObserver | None = None,
     bgp_observer: BgpObserver | None = None,
+    metrics: ReconcileMetrics | None = None,
 ) -> RuntimeSnapshot:
     """采集当前节点 runtime 视图。
 
@@ -45,6 +64,7 @@ def build_runtime_snapshot(
         bgp_protocols=bgp_protocols,
         wireguard_observation=wg_status,
         bgp_observation=bgp_status,
+        self_metrics=_to_self_metrics(metrics) if metrics is not None else None,
     )
 
 

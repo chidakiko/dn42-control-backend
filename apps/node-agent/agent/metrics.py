@@ -12,6 +12,7 @@ from __future__ import annotations
 """
 
 import json
+import threading
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
@@ -19,10 +20,15 @@ from dn42_common import atomic_write_json
 
 from .core.clock import utc_now_iso
 
+# reconcile 与背景循环（路由/reresolve/self-monitor）从不同协程写同一文件。虽然
+# 它们都在事件循环里串行执行、record_* 内无 await 不会真正交错，这把锁是防御性兜底，
+# 也容纳未来从非事件循环线程调用的可能。
+_WRITE_LOCK = threading.Lock()
+
 
 @dataclass(slots=True)
 class ReconcileMetrics:
-    """agent 自观测的累计 reconcile 指标。"""
+    """agent 自观测的累计 reconcile 指标 + 背景循环 / 进程自身观测。"""
 
     total_reconciles: int = 0
     total_failures: int = 0
@@ -31,6 +37,13 @@ class ReconcileMetrics:
     last_duration_seconds: float | None = None
     last_generation: int | None = None
     last_reconcile_at: str | None = None
+    # 背景循环耗时 + 进程自观测（self-monitor 周期写入）。免得排障时再临时装 py-spy：
+    # 一眼看到哪个旁路循环变慢了、agent 自身 CPU/RSS 高不高。
+    last_routing_collect_seconds: float | None = None
+    last_reresolve_seconds: float | None = None
+    cpu_percent: float | None = None
+    rss_mb: float | None = None
+    self_observed_at: str | None = None
 
 
 def load_metrics(path: Path) -> ReconcileMetrics:
@@ -62,21 +75,54 @@ def record_reconcile(
     ``skipped`` 复位连续失败。``at`` 缺省取当前 UTC ISO 时间。
     """
 
-    metrics = load_metrics(path)
-    metrics.total_reconciles += 1
-    if status == "failed":
-        metrics.total_failures += 1
-        metrics.consecutive_failures += 1
-    else:
-        metrics.consecutive_failures = 0
-    metrics.last_status = status
-    metrics.last_duration_seconds = round(duration_seconds, 3)
-    metrics.last_generation = generation
-    metrics.last_reconcile_at = at or utc_now_iso()
+    with _WRITE_LOCK:
+        metrics = load_metrics(path)
+        metrics.total_reconciles += 1
+        if status == "failed":
+            metrics.total_failures += 1
+            metrics.consecutive_failures += 1
+        else:
+            metrics.consecutive_failures = 0
+        metrics.last_status = status
+        metrics.last_duration_seconds = round(duration_seconds, 3)
+        metrics.last_generation = generation
+        metrics.last_reconcile_at = at or utc_now_iso()
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(path, asdict(metrics))
-    return metrics
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(path, asdict(metrics))
+        return metrics
 
 
-__all__ = ["ReconcileMetrics", "load_metrics", "record_reconcile"]
+def record_self_observation(
+    path: Path,
+    *,
+    cpu_percent: float | None = None,
+    rss_mb: float | None = None,
+    routing_collect_seconds: float | None = None,
+    reresolve_seconds: float | None = None,
+    at: str | None = None,
+) -> ReconcileMetrics:
+    """登记一次背景循环耗时 / 进程自观测，**只更新传入的字段**，原子写盘。
+
+    与 ``record_reconcile`` 写同一文件、同锁串行，互不覆盖对方字段（各自只动自己的）。
+    任一字段缺省（``None``）即本次不更新它，便于不同循环各报各的。
+    """
+
+    with _WRITE_LOCK:
+        metrics = load_metrics(path)
+        if cpu_percent is not None:
+            metrics.cpu_percent = cpu_percent
+        if rss_mb is not None:
+            metrics.rss_mb = rss_mb
+        if routing_collect_seconds is not None:
+            metrics.last_routing_collect_seconds = round(routing_collect_seconds, 3)
+        if reresolve_seconds is not None:
+            metrics.last_reresolve_seconds = round(reresolve_seconds, 3)
+        metrics.self_observed_at = at or utc_now_iso()
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(path, asdict(metrics))
+        return metrics
+
+
+__all__ = ["ReconcileMetrics", "load_metrics", "record_reconcile", "record_self_observation"]

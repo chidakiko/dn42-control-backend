@@ -16,6 +16,7 @@ from __future__ import annotations
 from .agent import (
     AgentRegistrationRequest,
     AgentRegistrationResponse,
+    AgentSelfMetrics,
     AppliedFileRecord,
     ApplyResult,
     DriftItem,
@@ -92,6 +93,7 @@ __all__ = [
     "AgentCapability",
     "AgentRegistrationRequest",
     "AgentRegistrationResponse",
+    "AgentSelfMetrics",
     "ApplyResult",
     "ApplyStatus",
     "AppliedFileRecord",

@@ -41,6 +41,7 @@ from .apply.writer import write_rendered_bundle
 from .collectors.docker import DockerObserver, ObservedProject
 from .collectors.network import BgpObserver, WireGuardObserver
 from .collectors.snapshot import build_runtime_snapshot
+from .metrics import load_metrics
 from .core.clock import utc_now_iso
 from .core.config import AgentConfig
 from .core.errors import ControllerError
@@ -194,6 +195,9 @@ class ReconcileOrchestrator:
             docker_observer=_StaticObserver(post_observed),
             wireguard_observer=wireguard_observer,
             bgp_observer=bgp_observer,
+            # 带上 agent 自观测（CPU/RSS/背景循环耗时）。读上一轮落盘的 metrics.json：
+            # reconcile 计数是上一轮、CPU/RSS 是 self-monitor 最近一次，足够前端展示。
+            metrics=load_metrics(paths.metrics_file),
         )
         report = build_reconciliation_report(
             state,

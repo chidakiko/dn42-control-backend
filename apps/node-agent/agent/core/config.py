@@ -52,6 +52,12 @@ class AgentConfig:
     # WG endpoint 周期重解析间隔（秒）。独立于 reconcile 的自愈：对端走动态 DNS、IP
     # 变更后内核仍钉死旧 IP，本任务据握手超时用域名重设 endpoint。设 0 关闭。
     reresolve_interval_seconds: float = 45.0
+    # 进程自观测间隔（秒）：周期采集 agent 自身 CPU%/RSS 写入 metrics 文件，并对持续
+    # 高 CPU 告警。设 0 关闭。背景循环耗时（路由/reresolve）也随其各自循环一并记录。
+    self_monitor_interval_seconds: float = 60.0
+    # 自身 CPU% 告警阈值：单次自观测窗口 CPU 占用 ≥ 此值即 WARN（多核可 >100）。
+    # 默认 80%——足以揪出"烧满一个核"的背景循环热点，又不会被正常突发刷屏。
+    cpu_warn_percent: float = 80.0
     # BIRD 控制 socket 路径的**显式覆盖**。路由采集已全量直连 socket；留空时路径默认从
     # 渲染目录推导（``<rendered_dir>/run/bird/bird.ctl``，与 bird 容器 ``./run/bird`` 可写
     # 挂载落点一致）。仅在非常规部署 / 联调需要指向别处时设置。
@@ -100,6 +106,8 @@ _ALLOWED_KEYS = {
     "local_convergence",
     "routing_interval_seconds",
     "reresolve_interval_seconds",
+    "self_monitor_interval_seconds",
+    "cpu_warn_percent",
     "bird_socket_path",
 }
 
@@ -138,6 +146,8 @@ _ENV_KEYS: dict[str, str] = {
     "DN42_AGENT_LOCAL_CONVERGENCE": "local_convergence",
     "DN42_AGENT_ROUTING_INTERVAL_SECONDS": "routing_interval_seconds",
     "DN42_AGENT_RERESOLVE_INTERVAL_SECONDS": "reresolve_interval_seconds",
+    "DN42_AGENT_SELF_MONITOR_INTERVAL_SECONDS": "self_monitor_interval_seconds",
+    "DN42_AGENT_CPU_WARN_PERCENT": "cpu_warn_percent",
     "DN42_AGENT_BIRD_SOCKET_PATH": "bird_socket_path",
 }
 
@@ -154,6 +164,8 @@ def _apply_env(config: AgentConfig, env: dict[str, str] | os._Environ[str]) -> A
             "http_timeout_seconds",
             "routing_interval_seconds",
             "reresolve_interval_seconds",
+            "self_monitor_interval_seconds",
+            "cpu_warn_percent",
         }:
             try:
                 overrides[field_name] = float(raw)

@@ -296,6 +296,27 @@ class ObservedRoute(StrictModel):
         return validate_ip_network(value)
 
 
+class AgentSelfMetrics(StrictModel):
+    """Agent **进程自观测**：CPU/RSS + 背景循环耗时 + reconcile 累计。
+
+    全部可选——旧 agent / 尚未采到时缺省 ``None``，控制面与前端据此降级显示。
+    数据由 agent 周期写入本地 metrics.json（self-monitor 循环 + 各背景循环），构造
+    ``RuntimeSnapshot`` 时一并带上，免去额外端点。时间戳为 best-effort 不做强校验，
+    避免观测字段的小瑕疵拖累整份快照被拒。
+    """
+
+    cpu_percent: float | None = Field(default=None, ge=0)
+    rss_mb: float | None = Field(default=None, ge=0)
+    last_routing_collect_seconds: float | None = Field(default=None, ge=0)
+    last_reresolve_seconds: float | None = Field(default=None, ge=0)
+    last_reconcile_duration_seconds: float | None = Field(default=None, ge=0)
+    total_reconciles: int | None = Field(default=None, ge=0)
+    total_failures: int | None = Field(default=None, ge=0)
+    consecutive_failures: int | None = Field(default=None, ge=0)
+    self_observed_at: str | None = None
+    last_reconcile_at: str | None = None
+
+
 class RuntimeSnapshot(StrictModel):
     """节点 Agent 采集到的运行时快照，是 Reconcile 判定 drift 的唯一输入源。
 
@@ -316,6 +337,9 @@ class RuntimeSnapshot(StrictModel):
     wireguard_observation: ObservationStatus = ObservationStatus.NOT_OBSERVED
     bgp_observation: ObservationStatus = ObservationStatus.NOT_OBSERVED
     errors: list[str] = Field(default_factory=list)
+    # Agent 进程自观测（CPU/RSS/背景循环耗时）。可选——旧 agent 不带，控制面随
+    # last_snapshot JSON 自动透出给前端，无需新端点 / 迁移。
+    self_metrics: AgentSelfMetrics | None = None
 
     @field_validator("captured_at")
     @classmethod

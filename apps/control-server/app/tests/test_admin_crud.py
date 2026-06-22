@@ -78,6 +78,37 @@ def test_create_get_delete_node(client: TestClient) -> None:
     assert client.get("/api/v1/admin/nodes/lab1").status_code == 404
 
 
+def test_node_link_local_create_patch_and_validation(client: TestClient) -> None:
+    # 创建时带 link_local → 读回一致。
+    r = client.post(
+        "/api/v1/admin/nodes",
+        json={
+            "node_id": "lab2",
+            "asn": 4242420098,
+            "router_id": "172.20.98.1",
+            "link_local": "fe80::28",
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["link_local"] == "fe80::28"
+    assert client.get("/api/v1/admin/nodes/lab2").json()["link_local"] == "fe80::28"
+
+    # PATCH 改 link_local。
+    r = client.patch("/api/v1/admin/nodes/lab2", json={"link_local": "fe80::29"})
+    assert r.status_code == 200 and r.json()["link_local"] == "fe80::29"
+
+    # 非法值（非 fe80::/10）被校验拒绝。
+    r = client.patch("/api/v1/admin/nodes/lab2", json={"link_local": "2001:db8::1"})
+    assert r.status_code == 422
+    r = client.post(
+        "/api/v1/admin/nodes",
+        json={"node_id": "lab3", "asn": 1, "router_id": "1.1.1.1", "link_local": "not-an-ip"},
+    )
+    assert r.status_code == 422
+
+    client.delete("/api/v1/admin/nodes/lab2")
+
+
 def test_create_node_conflict(client: TestClient, hkg1: str) -> None:
     r = client.post(
         "/api/v1/admin/nodes",

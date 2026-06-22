@@ -31,7 +31,8 @@ from .adapters import Adapters
 from .core.config import AgentConfig
 from .core.identity import LocalAgentIdentity, load_identity
 from .core.paths import AgentPaths
-from .metrics import record_reconcile
+from .metrics import record_reconcile, record_self_observation
+from .observability import CpuSampler, current_rss_mb, warn_if_slow
 from .orchestrator import OrchestratorResult, run_once
 from .reresolve import reresolve_and_report
 from .routing import collect_and_publish_routing
@@ -155,6 +156,47 @@ def _record_reconcile_metrics(
         )
     except Exception:  # noqa: BLE001 - 指标是尽力而为，绝不阻断 reconcile
         logger.debug("watch: 记录 reconcile 指标失败", exc_info=True)
+
+
+def _record_self(config: AgentConfig, node_id: str, **fields: float | None) -> None:
+    """把背景循环耗时 / 进程自观测落到节点 metrics 文件，best-effort（绝不阻断循环）。"""
+
+    try:
+        record_self_observation(AgentPaths(config.state_dir, node_id).metrics_file, **fields)
+    except Exception:  # noqa: BLE001 - 自观测是尽力而为
+        logger.debug("watch: 记录自观测指标失败", exc_info=True)
+
+
+async def _self_monitor_loop(
+    *,
+    config: AgentConfig,
+    interval: float,
+    cpu_warn_percent: float,
+    stop: asyncio.Event,
+) -> None:
+    """周期采集 agent **自身** CPU%/RSS 写入 metrics 文件，并对持续高 CPU 告警。
+
+    与背景循环各自上报的耗时合起来，让"agent 忙不忙、哪个循环慢了"在 metrics 文件 /
+    ``doctor`` 里一眼可见——排障不必再临时往生产装 py-spy。CPU 取进程级（含全部线程），
+    所以即便热点在 executor 工作线程里也能捕获。
+    """
+
+    sampler = CpuSampler()
+    # 先睡一个间隔再首采：第一段窗口才有 CPU 区间可算。
+    await _sleep_or_stop(stop, interval)
+    while not stop.is_set():
+        node_id = resolve_node_id(config)
+        if node_id is not None:
+            cpu_percent, _ = sampler.sample()
+            _record_self(config, node_id, cpu_percent=cpu_percent, rss_mb=current_rss_mb())
+            if cpu_warn_percent > 0 and cpu_percent >= cpu_warn_percent:
+                logger.warning(
+                    "observability: agent 自身 CPU %.0f%% 持续偏高（阈值 %.0f%%，含全部"
+                    "线程）——疑似背景循环热点，建议排查",
+                    cpu_percent,
+                    cpu_warn_percent,
+                )
+        await _sleep_or_stop(stop, interval)
 
 
 def build_ws_url(controller_url: str, node_id: str) -> str:
@@ -311,6 +353,20 @@ async def run_watch(
             name="dn42-agent-reresolve",
         )
 
+    # 进程自观测（CPU/RSS + 高 CPU 告警）：纯本地、不依赖 adapters，但同样仅在常驻
+    # 守护进程下启用，避免注入桩的单测无意写指标文件。设 0 关闭。
+    self_monitor_task: asyncio.Task[None] | None = None
+    if adapters is not None and config.self_monitor_interval_seconds > 0:
+        self_monitor_task = asyncio.create_task(
+            _self_monitor_loop(
+                config=config,
+                interval=config.self_monitor_interval_seconds,
+                cpu_warn_percent=config.cpu_warn_percent,
+                stop=stop,
+            ),
+            name="dn42-agent-self-monitor",
+        )
+
     try:
         await _consumer_loop(
             bell=bell,
@@ -325,6 +381,8 @@ async def run_watch(
             routing_task.cancel()
         if reresolve_task is not None:
             reresolve_task.cancel()
+        if self_monitor_task is not None:
+            self_monitor_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await client_task
         if routing_task is not None:
@@ -333,6 +391,9 @@ async def run_watch(
         if reresolve_task is not None:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await reresolve_task
+        if self_monitor_task is not None:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self_monitor_task
         if adapters is not None:
             adapters.close()
 
@@ -533,12 +594,18 @@ async def _routing_loop(
         if node_id is None:
             logger.debug("routing: 尚不能确定 node_id，跳过本轮路由采集")
             return
+        started = time.monotonic()
         try:
             await loop.run_in_executor(
                 None, collect_and_publish_routing, config, adapters, node_id
             )
         except Exception:  # noqa: BLE001 - 路由采集是旁路观测，绝不拖垮守护进程
             logger.warning("routing: 路由全表采集/上报失败", exc_info=True)
+            return
+        duration = time.monotonic() - started
+        # 单轮采集 > 整个间隔 = 追不上节奏（RPKI O(路由×ROA) 爆炸那类回归的特征），自动告警。
+        warn_if_slow("routing-collect", duration, interval)
+        _record_self(config, node_id, routing_collect_seconds=duration)
 
     # 启动 grace：给首次 reconcile 落盘窗口，但远小于 interval，确保重启后很快出首帧。
     await _sleep_or_stop(stop, min(interval, 10.0))
@@ -571,10 +638,15 @@ async def _reresolve_loop(
         if node_id is None:
             logger.debug("reresolve: 尚不能确定 node_id，跳过本轮")
             return
+        started = time.monotonic()
         try:
             await loop.run_in_executor(None, reresolve_and_report, config, adapters, node_id)
         except Exception:  # noqa: BLE001 - 自愈是旁路，绝不拖垮守护进程
             logger.warning("reresolve: 本轮重解析失败", exc_info=True)
+            return
+        duration = time.monotonic() - started
+        warn_if_slow("reresolve", duration, interval)
+        _record_self(config, node_id, reresolve_seconds=duration)
 
     await _sleep_or_stop(stop, min(interval, 15.0))
     while not stop.is_set():

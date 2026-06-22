@@ -23,6 +23,7 @@
 		site: '',
 		loopback_ipv4: '',
 		loopback_ipv6: '',
+		link_local: '',
 		ipv4_prefixes: '',
 		ipv6_prefixes: ''
 	});
@@ -50,6 +51,7 @@
 			site: '',
 			loopback_ipv4: '',
 			loopback_ipv6: '',
+			link_local: '',
 			ipv4_prefixes: '',
 			ipv6_prefixes: ''
 		};
@@ -79,6 +81,7 @@
 			site: f.site.trim() || null,
 			loopback_ipv4: f.loopback_ipv4.trim() || null,
 			loopback_ipv6: f.loopback_ipv6.trim() || null,
+			link_local: f.link_local.trim() || null,
 			ipv4_prefixes: lines(f.ipv4_prefixes),
 			ipv6_prefixes: lines(f.ipv6_prefixes),
 			base_template: JSON.parse(baseTemplate || '{}')
@@ -161,6 +164,7 @@
 	<div class="row">
 		<label class="field"><span>{t('node.f.lo4')}</span><input bind:value={f.loopback_ipv4} /></label>
 		<label class="field"><span>{t('node.f.lo6')}</span><input bind:value={f.loopback_ipv6} /></label>
+		<label class="field"><span>{t('node.f.lla')}</span><input bind:value={f.link_local} placeholder="fe80::28" /></label>
 	</div>
 	<div class="row">
 		<label class="field"

@@ -8,7 +8,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.services.materializer import _interface_payload
+from app.services.materializer import _interface_payload, _node_payload
+
+
+def _node(link_local):
+    return SimpleNamespace(
+        node_id="edge1", site="hk", asn=4242420001, router_id="172.20.0.1",
+        ipv4_prefixes=[], ipv6_prefixes=[], loopback_ipv4=None, loopback_ipv6=None,
+        link_local=link_local,
+    )
 
 _EXTERNAL = SimpleNamespace(is_internal=False, remote_node_id=None)
 _INTERNAL = SimpleNamespace(is_internal=True, remote_node_id=None)
@@ -49,3 +57,13 @@ def test_lla_not_added_to_non_wireguard() -> None:
 def test_lla_noop_when_node_has_no_link_local() -> None:
     out = _interface_payload(_row("wireguard", []), {}, None)
     assert out["addresses"] == []
+
+
+def test_node_payload_carries_link_local_from_db_column() -> None:
+    # node 表的 link_local 列进 materialized node payload，供下游派生取用。
+    assert _node_payload(_node("fe80::28"), {})["link_local"] == "fe80::28"
+
+
+def test_node_payload_db_link_local_overrides_base_template() -> None:
+    # DB 列为单一真相源：node.link_local=None 也覆盖 base_template 里的旧副本，避免两处分叉。
+    assert _node_payload(_node(None), {"link_local": "fe80::99"})["link_local"] is None

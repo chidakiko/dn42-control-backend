@@ -10,6 +10,7 @@ export interface NodeOut {
 	site: string | null;
 	loopback_ipv4: string | null;
 	loopback_ipv6: string | null;
+	link_local: string | null;
 	ipv4_prefixes: string[];
 	ipv6_prefixes: string[];
 	inventory: Record<string, unknown>;
@@ -29,6 +30,7 @@ export interface NodeIn {
 	site?: string | null;
 	loopback_ipv4?: string | null;
 	loopback_ipv6?: string | null;
+	link_local?: string | null;
 	ipv4_prefixes?: string[];
 	ipv6_prefixes?: string[];
 	inventory?: Record<string, unknown>;
@@ -70,6 +72,21 @@ export interface StatusEvent {
 	status: string | null;
 	created_at: string | null;
 	payload: Record<string, unknown>;
+}
+
+// agent 进程自观测，随 RuntimeSnapshot 上报、落在 last_snapshot.self_metrics。
+// 全可选——旧 agent / 尚未采到时为 null。镜像 dn42_schemas.AgentSelfMetrics。
+export interface AgentSelfMetrics {
+	cpu_percent: number | null;
+	rss_mb: number | null;
+	last_routing_collect_seconds: number | null;
+	last_reresolve_seconds: number | null;
+	last_reconcile_duration_seconds: number | null;
+	total_reconciles: number | null;
+	total_failures: number | null;
+	consecutive_failures: number | null;
+	self_observed_at: string | null;
+	last_reconcile_at: string | null;
 }
 
 export interface NodeStatusEvents {

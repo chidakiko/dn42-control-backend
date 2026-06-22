@@ -158,6 +158,7 @@ const en: Dict = {
 	'node.f.site': 'Site',
 	'node.f.lo4': 'Loopback v4',
 	'node.f.lo6': 'Loopback v6',
+	'node.f.lla': 'Link-local (eBGP)',
 	'node.f.gen': 'Generation',
 	'node.genShort': 'gen',
 	'node.f.created': 'Created',
@@ -376,6 +377,15 @@ const en: Dict = {
 	'trends.applyRate': 'Apply success',
 	'trends.lastApply': 'Last apply',
 	'trends.noData': 'No history yet',
+
+	// agent self-observation metrics
+	'selfmetrics.title': 'Agent self-metrics',
+	'selfmetrics.cpu': 'Agent CPU',
+	'selfmetrics.rss': 'Agent memory',
+	'selfmetrics.routing': 'Routing collect',
+	'selfmetrics.reresolve': 'WG reresolve',
+	'selfmetrics.failures': 'Reconcile failures',
+	'selfmetrics.observedAt': 'Sampled',
 
 	// time-range selector
 	'range.24h': '24h',
@@ -743,6 +753,7 @@ const zh: Dict = {
 	'node.f.site': '站点',
 	'node.f.lo4': 'Loopback v4',
 	'node.f.lo6': 'Loopback v6',
+	'node.f.lla': '链路本地 (eBGP)',
 	'node.f.gen': '版本',
 	'node.genShort': '版本',
 	'node.f.created': '创建时间',
@@ -953,6 +964,15 @@ const zh: Dict = {
 	'trends.applyRate': 'Apply 成功率',
 	'trends.lastApply': '最近 apply',
 	'trends.noData': '暂无历史数据',
+
+	// agent self-observation metrics
+	'selfmetrics.title': 'Agent 自观测',
+	'selfmetrics.cpu': 'Agent CPU',
+	'selfmetrics.rss': 'Agent 内存',
+	'selfmetrics.routing': '路由采集耗时',
+	'selfmetrics.reresolve': 'WG 重解析耗时',
+	'selfmetrics.failures': 'Reconcile 失败',
+	'selfmetrics.observedAt': '采样于',
 
 	'range.24h': '24 小时',
 	'range.7d': '7 天',

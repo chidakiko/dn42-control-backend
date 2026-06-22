@@ -307,6 +307,9 @@ def _node_payload(node: Node, fallback: object) -> dict[str, object]:
             "ipv6_prefixes": list(node.ipv6_prefixes or []),
             "loopback_ipv4": node.loopback_ipv4,
             "loopback_ipv6": node.loopback_ipv6,
+            # DB 列为外部 eBGP LLA 单一真相源（与 loopback 同样 DB 字段优先，None 也覆盖
+            # base_template，避免两处各存一份）。设了才派生 fe80::X/64，否则 no-op。
+            "link_local": node.link_local,
         }
     )
     return base
