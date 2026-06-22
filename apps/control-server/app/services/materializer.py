@@ -52,7 +52,10 @@ async def materialize(
     # 严格单调递增、不会两个事务同读 current_generation 后撞 UNIQUE(node_id,
     # generation)。Postgres/MySQL 走 SELECT ... FOR UPDATE；SQLite 忽略该子句，
     # 但其单写者模型 + UNIQUE 约束兜底（极端并发下后写事务报错回滚，数据不脏）。
-    node = await session.get(Node, node_id, with_for_update=True)
+    # ``of=Node`` 不可省：Node.dns_group 是 lazy="joined" 的可空关系，get() 会带出
+    # nodes LEFT OUTER JOIN dns_groups；Postgres 不允许 FOR UPDATE 锁外连接的可空侧
+    # （asyncpg FeatureNotSupportedError）。限定 FOR UPDATE OF nodes 只锁非空主表即可。
+    node = await session.get(Node, node_id, with_for_update={"of": Node})
     if node is None:
         return None
 

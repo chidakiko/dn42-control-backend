@@ -45,7 +45,7 @@ flowchart TB
 
 `materialize(node_id)`（`app/services/materializer.py:33`）是控制面的核心，把数据库里的规范化事实合成为一份完整、经校验的 `DesiredState`：
 
-1. **锁节点行**（`with_for_update`）串行化并发 admin 写。
+1. **锁节点行**（`with_for_update={"of": Node}` → `FOR UPDATE OF nodes`）串行化并发 admin 写。限定只锁 `nodes` 主表是必须的：`Node.dns_group` 为 `lazy="joined"` 可空关系，get() 带外连接，PostgreSQL 不允许 `FOR UPDATE` 锁外连接可空侧（详见 [迁移指南](../guides/upgrades-and-migrations.md)）。
 2. **递增 generation**：`new = (current_generation or 0) + 1`。
 3. **加载子表**：interfaces、bgp_sessions（按 `sort_order, id`）、订阅的 DNS 组（`Node.dns_group_id` → 组 + 启用 zone + 启用 record）。
 4. **组装快照**（`_assemble_snapshot`）：以 `node.base_template` 为底，注入 `schema_version`、`generation`、`node` payload（DB 列覆盖 base_template）。

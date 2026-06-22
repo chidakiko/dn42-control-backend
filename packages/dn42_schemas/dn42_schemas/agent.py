@@ -35,6 +35,11 @@ from .enums import (
     ServiceRole,
 )
 
+# generation 是控制面单调递增计数；上限取 PostgreSQL int32（21.4 亿），既远超任何真实
+# 部署的世代数，又把 agent 误报/恶意的超大值挡在校验边界外——否则会在 PG int32 列上溢出
+# （SQLite 动态宽度会悄悄存下、PG 报 NumericValueOutOfRange）。
+_INT32_MAX = 2_147_483_647
+
 
 class PlanSummary(StrictModel):
     """`FilePlan` 的聚合计数，同时也被 `ApplyResult` 复用作为变动概要。"""
@@ -67,7 +72,7 @@ class ApplyResult(StrictModel):
     """
 
     node_id: str
-    generation: int = Field(ge=1)
+    generation: int = Field(ge=1, le=_INT32_MAX)
     status: ApplyStatus
     started_at: str
     finished_at: str | None = None
@@ -126,7 +131,7 @@ class AgentRegistrationResponse(StrictModel):
     node_id: str | None = None
     agent_id: str | None = None
     agent_token: str | None = None
-    desired_state_generation: int | None = Field(default=None, ge=1)
+    desired_state_generation: int | None = Field(default=None, ge=1, le=_INT32_MAX)
     message: str | None = None
 
     @model_validator(mode="after")
@@ -326,7 +331,7 @@ class RuntimeSnapshot(StrictModel):
     """
 
     node_id: str
-    generation: int | None = Field(default=None, ge=1)
+    generation: int | None = Field(default=None, ge=1, le=_INT32_MAX)
     captured_at: str
     containers: list[ObservedContainer] = Field(default_factory=list)
     interfaces: list[ObservedInterface] = Field(default_factory=list)
@@ -504,8 +509,8 @@ class ReconciliationReport(StrictModel):
     """一次 Reconcile 的闭环报告。`observed_generation` 与 `desired_generation` 不一致即为全局漂移信号。"""
 
     node_id: str
-    desired_generation: int = Field(ge=1)
-    observed_generation: int | None = Field(default=None, ge=1)
+    desired_generation: int = Field(ge=1, le=_INT32_MAX)
+    observed_generation: int | None = Field(default=None, ge=1, le=_INT32_MAX)
     status: ApplyStatus
     captured_at: str
     drift: list[DriftItem] = Field(default_factory=list)

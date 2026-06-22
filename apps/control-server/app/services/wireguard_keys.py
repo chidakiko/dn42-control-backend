@@ -56,7 +56,10 @@ async def apply_wireguard_key_report(
     重新物化），调用方在提交后据 ``propagated`` 广播事件。
     """
 
-    node = await session.get(Node, node_id, with_for_update=True)
+    # of=Node：只锁 nodes 主表。Node.dns_group 是 lazy="joined" 的可空关系，get()
+    # 会带出 nodes LEFT OUTER JOIN dns_groups，Postgres 不允许 FOR UPDATE 锁外连接
+    # 可空侧（见 materializer.materialize）。
+    node = await session.get(Node, node_id, with_for_update={"of": Node})
     if node is None:
         return KeyReportOutcome(STATUS_UNKNOWN_NODE, f"unknown node {node_id}")
 

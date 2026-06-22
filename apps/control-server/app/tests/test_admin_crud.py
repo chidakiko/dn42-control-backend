@@ -259,24 +259,30 @@ def test_failed_materialize_rolls_back_crud_change(
     会把接口留在表里变成"不可发布状态"。
     """
 
+    import asyncio
     import json
-    import sqlite3
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.db.models import Node
 
     before_gen = client.get(f"/api/v1/admin/nodes/{hkg1}").json()["current_generation"]
 
-    db_path = config.database_url.split("///", 1)[1]
-    conn = sqlite3.connect(db_path)
-    try:
-        row = conn.execute("SELECT base_template FROM nodes WHERE node_id = ?", (hkg1,)).fetchone()
-        template = json.loads(row[0])
-        template["runtime"]["underlay"]["gateway"] = "999.999.999.999"
-        conn.execute(
-            "UPDATE nodes SET base_template = ? WHERE node_id = ?",
-            (json.dumps(template), hkg1),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    # 绕过 API 直接改库制造非法 base_template。用 SQLAlchemy ORM（而非 raw sqlite3）→
+    # SQLite / PostgreSQL 通用，且 JSON 列序列化由模型类型处理。
+    async def _corrupt_base_template() -> None:
+        engine = create_async_engine(config.database_url)
+        try:
+            async with async_sessionmaker(engine)() as session:
+                node = await session.get(Node, hkg1)
+                template = json.loads(json.dumps(node.base_template))  # 深拷贝，改后整体重赋触发更新
+                template["runtime"]["underlay"]["gateway"] = "999.999.999.999"
+                node.base_template = template
+                await session.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_corrupt_base_template())
 
     r = client.post(
         f"/api/v1/admin/nodes/{hkg1}/interfaces",

@@ -138,3 +138,33 @@ def test_reconciliation_report_carries_drift_items() -> None:
     )
 
     assert report.drift[0].severity == DriftSeverity.CRITICAL
+
+
+def test_generation_fields_reject_int32_overflow() -> None:
+    """generation 超 PostgreSQL int32 在 schema 层即被拒——否则会在 PG int32 列上溢出
+    （SQLite 动态宽度悄悄存下、PG 报 NumericValueOutOfRange）。边界 int32 max 仍合法。"""
+
+    over = 2_147_483_648  # int32 max + 1
+    with pytest.raises(ValidationError):
+        RuntimeSnapshot(node_id="edge1", generation=over, captured_at="2026-05-14T02:00:00Z")
+    with pytest.raises(ValidationError):
+        ReconciliationReport(
+            node_id="edge1",
+            desired_generation=over,
+            observed_generation=1,
+            status=ApplyStatus.DEGRADED,
+            captured_at="2026-05-14T02:00:00Z",
+        )
+    # 边界值（int32 max）合法
+    RuntimeSnapshot(node_id="edge1", generation=2_147_483_647, captured_at="2026-05-14T02:00:00Z")
+
+
+def test_dns_ttl_soa_reject_int32_overflow() -> None:
+    """DNS TTL / SOA 计时器超 int32 在 schema 层即被拒（同上溢出防护）。"""
+
+    from dn42_schemas import DnsZoneSpec
+
+    over = 2_147_483_648
+    for field in ("soa_expire", "default_ttl", "soa_refresh"):
+        with pytest.raises(ValidationError):
+            DnsZoneSpec(zone="dn42", records_ref="zone://dn42", **{field: over})

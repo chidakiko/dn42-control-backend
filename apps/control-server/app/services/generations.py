@@ -101,9 +101,11 @@ async def rollback_to_generation(
     返回新版 ``DesiredState``。节点不存在返回 ``None``；目标代不存在抛
     ``GenerationNotFoundError``。与 ``materialize`` 同样的串行化纪律：行级
     ``FOR UPDATE`` 锁住节点，保证 generation 严格单调、不撞 UNIQUE。
+    ``of=Node`` 限定只锁 nodes 主表——Node.dns_group 的 lazy join 会让 get() 带出
+    外连接，Postgres 不允许 FOR UPDATE 锁其可空侧（见 materializer.materialize）。
     """
 
-    node = await session.get(Node, node_id, with_for_update=True)
+    node = await session.get(Node, node_id, with_for_update={"of": Node})
     if node is None:
         return None
 

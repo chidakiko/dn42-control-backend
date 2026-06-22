@@ -304,6 +304,34 @@ def test_unknown_node_registration_goes_pending(
     assert approved.json()["status"] == "approved"
 
 
+def test_duplicate_registration_keeps_single_pending_row(
+    client: TestClient, config: ControlServerConfig
+) -> None:
+    """同一未知节点重复注册只保留**一条** pending 行（record() get-or-create 幂等）。
+
+    PG 上若没有 partial unique index，并发/重复注册会建多条重复 pending 行污染审批门；
+    这里串行重复注册验证收敛到单行，且刷新成最后一次的 inventory。partial unique index
+    本身在 PG CI job 下被强制（record() 撞约束会 IntegrityError 重试，最终仍单行）。
+    """
+
+    payload = {
+        "enrollment_token": config.enrollment_token,
+        "requested_node_id": "dup-reg-node",
+        "inventory": {"hostname": "h1", "os": "linux", "arch": "x86_64"},
+    }
+    for hostname in ("h1", "h2", "h3"):
+        payload["inventory"]["hostname"] = hostname
+        r = client.post("/api/v1/agent/register", json=payload)
+        assert r.json()["status"] == "pending-approval", r.text
+
+    rows = client.get(
+        "/api/v1/admin/registrations", params={"status": "pending"}
+    ).json()["registrations"]
+    mine = [r for r in rows if r["requested_node_id"] == "dup-reg-node"]
+    assert len(mine) == 1  # 不重复
+    assert mine[0]["hostname"] == "h3"  # 刷新成最后一次
+
+
 def test_reject_registration(client: TestClient, config: ControlServerConfig) -> None:
     payload = {
         "enrollment_token": config.enrollment_token,

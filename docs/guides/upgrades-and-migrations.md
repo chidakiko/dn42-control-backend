@@ -83,3 +83,11 @@ alembic downgrade -1        # 回退一步（注意删列类多为不可逆）
 若某控制面历史上用 `create_all` 起库（没走 alembic），跨 schema 升级时 `create_all` **不会**改既有表，新迁移里的"删列/改列"也不会自动应用——需要手动 `ALTER TABLE ... DROP COLUMN ...`（如 `rpki_unknown`），或 `alembic stamp` 对齐版本后再 `upgrade`。
 
 > 该坑主要存在于早期 SQLite + create_all 起库期。现在 alembic 链已修到从空库可跑通且与 create_all 完全等价，新部署用 docker 全栈方案（PostgreSQL）+ `create_all`/`alembic upgrade head` 任一即可，schema 一致。SQLite→PostgreSQL 整库迁移用 `docker/migrate_sqlite_to_postgres.py`。
+
+### `FOR UPDATE` + lazy-joined 关系的坑（SQLite→PostgreSQL）
+
+`Node.dns_group` 是 `lazy="joined"` 的**可空**关系，所以 `session.get(Node, …, with_for_update=True)` 会发 `SELECT … FROM nodes LEFT OUTER JOIN dns_groups … FOR UPDATE`。SQLite 直接忽略 `FOR UPDATE` 子句，所以一直没暴露；切到 **PostgreSQL 后** asyncpg 报 `FeatureNotSupportedError: FOR UPDATE cannot be applied to the nullable side of an outer join`，导致**所有 materialize / 世代回滚 / agent WG 公钥上报全部 500**（provision、改接口、改拓扑、注册都被卡死）。
+
+修复：行级锁限定只锁 `nodes` 主表——`with_for_update={"of": Node}`（生成 `FOR UPDATE OF nodes`），不去锁外连接的可空侧。已统一修在 `services/materializer.py`、`services/generations.py`、`services/wireguard_keys.py` 三处。
+
+> 通用规律：在 PostgreSQL 上对带 `lazy="joined"` 可空关系的实体做 `with_for_update` 时，必须用 `of=` 限定到非空主表，否则报上述错误。新增此类锁查询时照此处理。

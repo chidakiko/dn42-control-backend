@@ -9,11 +9,13 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -186,6 +188,20 @@ class PendingRegistration(Base):
     """
 
     __tablename__ = "pending_registrations"
+
+    # 同一节点同时**最多一条 pending 行**：防并发注册竞态——PG MVCC 下两个并发 register
+    # 都 SELECT-miss 再各插一条 → 重复 pending 行污染审批门；SQLite 单写者把这窗口藏住了。
+    # partial unique index（SQLite / PostgreSQL 都支持）从 DB 层兜住；record() 再配
+    # IntegrityError 重试走 update 分支。不约束非 pending 行，故 reject 后可重新注册。
+    __table_args__ = (
+        Index(
+            "uq_pending_registrations_node_pending",
+            "requested_node_id",
+            unique=True,
+            sqlite_where=text("status = 'pending'"),
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     requested_node_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

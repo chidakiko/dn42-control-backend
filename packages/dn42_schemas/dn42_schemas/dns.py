@@ -16,6 +16,11 @@ _DNS_RECORD_TYPES = frozenset(
     {"A", "AAAA", "CNAME", "NS", "PTR", "TXT", "MX", "SRV", "CAA"}
 )
 
+# DNS TTL / SOA 计时器 / 缓存 TTL 上限取 PostgreSQL int32（DNS TTL 按 RFC 2181 本就
+# ≤ 2147483647）。不设上限时 schema 放行的超大值会在 PG int32 列上溢出（SQLite 动态
+# 宽度悄悄存下、PG 报 NumericValueOutOfRange）。
+_INT32_MAX = 2_147_483_647
+
 
 class DnsRecordSpec(StrictModel):
     """zone 文件里的一条资源记录。
@@ -30,7 +35,7 @@ class DnsRecordSpec(StrictModel):
     name: str
     type: str
     value: str
-    ttl: int | None = Field(default=None, ge=0)
+    ttl: int | None = Field(default=None, ge=0, le=_INT32_MAX)
 
     @field_validator("type")
     @classmethod
@@ -62,11 +67,11 @@ class DnsZoneSpec(StrictModel):
     records_ref: str
     primary_ns: str | None = None
     admin_email: str | None = None
-    soa_refresh: int = Field(default=86400, ge=0)
-    soa_retry: int = Field(default=7200, ge=0)
-    soa_expire: int = Field(default=3600000, ge=0)
-    soa_minimum: int = Field(default=3600, ge=0)
-    default_ttl: int = Field(default=3600, ge=0)
+    soa_refresh: int = Field(default=86400, ge=0, le=_INT32_MAX)
+    soa_retry: int = Field(default=7200, ge=0, le=_INT32_MAX)
+    soa_expire: int = Field(default=3600000, ge=0, le=_INT32_MAX)
+    soa_minimum: int = Field(default=3600, ge=0, le=_INT32_MAX)
+    default_ttl: int = Field(default=3600, ge=0, le=_INT32_MAX)
     records: list[DnsRecordSpec] = Field(default_factory=list)
 
     @field_validator("zone")
@@ -113,7 +118,7 @@ class DnsSpec(StrictModel):
 
     enabled: bool = True
     bind_addresses: list[str]
-    cache_ttl_seconds: int = Field(default=300, ge=0)
+    cache_ttl_seconds: int = Field(default=300, ge=0, le=_INT32_MAX)
     zones: list[DnsZoneSpec] = Field(default_factory=list)
     forwards: list[DnsForwardSpec] = Field(default_factory=list)
 
