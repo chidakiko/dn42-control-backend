@@ -1,77 +1,94 @@
-# 文档索引
+# 文档中心
 
-本目录是 `dn42-control-backend` 的文档中心。文档按"读者要做什么"分四层：**入门教程 → 操作手册 → 参考 → 内部原理**。
+`dn42-control-backend` 的全部文档都在这里。文档按**读者要做什么**分四层，遵循 [Diátaxis](https://diataxis.fr/) 框架：
+
+| 层 | 目录 | 回答的问题 | 形态 |
+| --- | --- | --- | --- |
+| 教程 | [`tutorials/`](tutorials/) | 我第一次接触，怎么从零跑起来？ | 手把手、可照做 |
+| 操作手册 | [`guides/`](guides/) | 我要完成某个具体任务，步骤是什么？ | 任务导向、面向目标 |
+| 参考 | [`reference/`](reference/) | 这个接口/配置/字段/表到底是什么？ | 查得到、求精确 |
+| 内部原理 | [`internals/`](internals/) | 系统为什么这样设计、怎么运转？ | 解释、配图 |
 
 ## 我该读哪篇？
 
 | 你的情况 | 从这里开始 |
 | --- | --- |
-| 第一次接触本项目 | [tutorial.md](tutorial.md) —— 大白话教程，从零跑通 |
-| 要把系统部署到真实环境 | [operations.md](operations.md) —— 部署、节点接入、token、健康监控、排错 |
-| 要用 Web 界面操作控制面 | [web-ui.md](web-ui.md) —— 登录、各页面、一键互联向导（含截图） |
-| 节点间互联 / iBGP 缺路由 | [internal-interconnect.md](internal-interconnect.md) —— internal_topology 不变量、排错、postmortem |
-| 要调用 / 对接 API | [api.md](api.md) —— 全部接口、请求响应示例 |
-| 要查某个配置项 | [configuration.md](configuration.md) —— 两个应用的全部配置与环境变量 |
-| 想理解系统怎么运转 | [architecture.md](architecture.md) —— 组件、边界、数据流、变更闭环 |
-| 要改代码 / 写测试 | [testing.md](testing.md) + 各组件文档 |
+| 完全没接触过本项目 | [overview.md](overview.md) → [tutorials/01-quickstart.md](tutorials/01-quickstart.md) |
+| 要把系统部署到生产 | [guides/deployment.md](guides/deployment.md) |
+| 要接入一个新节点 | [guides/node-onboarding.md](guides/node-onboarding.md) |
+| 要建立 eBGP / iBGP 互联 | [guides/peering.md](guides/peering.md) |
+| 要配 DNS / 任播 | [guides/dns-and-anycast.md](guides/dns-and-anycast.md) |
+| 要 renumber 地址 / 看寻址分配 | [guides/addressing-and-renumber.md](guides/addressing-and-renumber.md) |
+| 要升级 agent / 跑数据库迁移 | [guides/upgrades-and-migrations.md](guides/upgrades-and-migrations.md) |
+| 节点不健康 / iBGP 缺路由 | [guides/monitoring-and-troubleshooting.md](guides/monitoring-and-troubleshooting.md) |
+| 要用 Web 管理界面 | [guides/web-ui.md](guides/web-ui.md) |
+| 要调用 / 对接 API | [reference/api.md](reference/api.md) |
+| 要查某个配置项 / 环境变量 | [reference/configuration.md](reference/configuration.md) |
+| 要查 `DesiredState` 字段 | [reference/desired-state.md](reference/desired-state.md) |
+| 要查数据库表 | [reference/database.md](reference/database.md) |
+| 想理解系统怎么运转 | [internals/architecture.md](internals/architecture.md) |
+| 要改代码 / 写测试 | [contributing.md](contributing.md) |
 
 ## 全部文档
 
-### 入门
+### 概览
 
 | 文档 | 内容 |
 | --- | --- |
-| [tutorial.md](tutorial.md) | 新手教程：每个功能拆成「这是什么 / 为什么需要 / 一步步怎么做」 |
+| [overview.md](overview.md) | 系统是什么、解决什么问题、核心概念词汇表、一句话闭环 |
 
-### 操作手册
-
-| 文档 | 内容 |
-| --- | --- |
-| [operations.md](operations.md) | 部署（compose / systemd）、节点接入与审批、存量导入、token 生命周期、健康监控、故障排查 |
-| [web-ui.md](web-ui.md) | 管理 Web UI 操作指南：登录、仪表盘、节点详情各页签、**一键互联向导**、注册审批、provision、审计（含截图） |
-| [internal-interconnect.md](internal-interconnect.md) | 内部互联：`internal_topology` 驱动 iBGP/OSPF、**各节点配置必须一致**的不变量、加节点 checklist、缺路由排错 + 真实 postmortem |
-
-### 参考
+### 教程（tutorials/）
 
 | 文档 | 内容 |
 | --- | --- |
-| [api.md](api.md) | Agent HTTP / WebSocket API、Admin API（CRUD、provision、注册审批、健康、token 管理） |
-| [configuration.md](configuration.md) | Control Server 与 Node Agent 的全部配置项、环境变量、TOML、CLI 约束 |
-| [desired-state.md](desired-state.md) | `DesiredState` 字段、校验规则、渲染结果 |
-| [database.md](database.md) | 数据库表、字段、关系、Materializer / Provision 写入路径、Alembic |
+| [tutorials/01-quickstart.md](tutorials/01-quickstart.md) | 本地从零跑通：装依赖 → 起 Control Server → 起 Node Agent（plan-only / once / daemon）→ 打开 Web UI |
 
-### 内部原理
+### 操作手册（guides/）
 
 | 文档 | 内容 |
 | --- | --- |
-| [architecture.md](architecture.md) | 系统整体结构、内部组件、数据流、节点 runtime、变更闭环 |
-| [addressing.md](addressing.md) | 地址概念总览：所有地址类型的用途 / 真相源 / 影响半径，按 源/派生/副本 分类（单一真相源重构基线） |
-| [node-agent.md](node-agent.md) | Agent 运行模式、守护循环、部署 backend、本机收敛、模块边界、错误分层 |
-| [security.md](security.md) | token 哈希模型、注册审批闸门、接口暴露边界、写盘与容器安全 |
+| [guides/deployment.md](guides/deployment.md) | 生产部署：systemd 两个单元、Postgres、`alembic upgrade head`、Web 静态托管 + CORS、recovery key 注入 |
+| [guides/node-onboarding.md](guides/node-onboarding.md) | 节点接入全流程：enrollment token → register → 审批闸门 → provision → agent token 生命周期 |
+| [guides/peering.md](guides/peering.md) | 建立 eBGP / iBGP 互联（Web 一键互联向导 + Admin API）、`internal_topology` 不变量、route collector |
+| [guides/dns-and-anycast.md](guides/dns-and-anycast.md) | DNS 组 / zone / record、`bind_addresses` 任播、共享组多节点 anycast、rDNS、CoreDNS |
+| [guides/addressing-and-renumber.md](guides/addressing-and-renumber.md) | fleet 寻址分配（单播 /27 + 任播 /29）+ renumber 操作的同步点 + 迁移脚本 |
+| [guides/upgrades-and-migrations.md](guides/upgrades-and-migrations.md) | agent wheel 构建与滚动升级、Control Server 升级、Alembic 迁移操作 |
+| [guides/monitoring-and-troubleshooting.md](guides/monitoring-and-troubleshooting.md) | 健康五态判定、status-events、routing 视图、常见故障与 internal-interconnect postmortem |
+| [guides/secret-recovery.md](guides/secret-recovery.md) | WireGuard 私钥 escrow（RSA-OAEP）模型 + `dn42-recover` 离线恢复流程 |
+| [guides/web-ui.md](guides/web-ui.md) | Web 管理界面操作指南：登录、仪表盘、节点详情各页签、向导、审批、provision、审计 |
+
+### 参考（reference/）
+
+| 文档 | 内容 |
+| --- | --- |
+| [reference/api.md](reference/api.md) | 全部 Admin HTTP / Agent HTTP / WebSocket 接口 |
+| [reference/configuration.md](reference/configuration.md) | Control Server 与 Node Agent 的全部配置项、环境变量、CLI |
+| [reference/desired-state.md](reference/desired-state.md) | `DesiredState` 顶层与全部嵌套 schema 字段、校验规则、normalize 钩子 |
+| [reference/database.md](reference/database.md) | 全部表、字段、关系、materialize 写入路径、迁移清单 |
+| [reference/cli-and-scripts.md](reference/cli-and-scripts.md) | Node Agent CLI 全参数 + `deploy/` 运维脚本 + `scripts/` 开发脚本 |
+| [reference/addressing-model.md](reference/addressing-model.md) | 地址概念模型：所有地址类型按**源 / 派生 / 副本**分类 |
+
+### 内部原理（internals/）
+
+| 文档 | 内容 |
+| --- | --- |
+| [internals/architecture.md](internals/architecture.md) | 系统组件、边界、数据流、最小扰动设计、并发一致性、变更闭环 |
+| [internals/control-server.md](internals/control-server.md) | materializer、健康推导、token / enrollment、WebSocket / EventBus、Peering 聚合根、provision |
+| [internals/node-agent.md](internals/node-agent.md) | 运行模式、守护双任务 + 门铃、planner / convergence、collectors、self-heal、sideline 任务 |
+| [internals/shared-packages.md](internals/shared-packages.md) | 四个共享包分层与依赖方向、各包职责、关键模型 / 校验器 / 模板 |
+| [internals/security.md](internals/security.md) | token 哈希模型、注册审批闸门、禁止的控制模型、写盘与容器安全 |
 
 ### 工程
 
 | 文档 | 内容 |
 | --- | --- |
-| [testing.md](testing.md) | 测试分层、常用命令、golden 文件、部署验证 |
-| [TODO.md](TODO.md) | 待办事项与各能力当前状态 |
-
-### 组件与共享包
-
-| 文档 | 内容 |
-| --- | --- |
-| [../apps/control-server/README.md](../apps/control-server/README.md) | Control Server 代码结构与本地启动 |
-| [../apps/node-agent/README.md](../apps/node-agent/README.md) | Node Agent 代码结构与命令示例 |
-| [../packages/docs/README.md](../packages/docs/README.md) | 共享包分层、数据流与依赖方向 |
-| [../packages/docs/dn42_schemas.md](../packages/docs/dn42_schemas.md) | 协议模型与枚举 |
-| [../packages/docs/dn42_templates.md](../packages/docs/dn42_templates.md) | 模板渲染 |
-| [../packages/docs/dn42_runtime.md](../packages/docs/dn42_runtime.md) | 文件计划、原子写盘、router Dockerfile 渲染 |
-| [../packages/docs/dn42_common.md](../packages/docs/dn42_common.md) | 校验器与公共工具 |
-| [../deploy/docker-compose/README.md](../deploy/docker-compose/README.md) | 三节点 compose 编排 |
-| [../examples/rendered-hkg1/README.md](../examples/rendered-hkg1/README.md) | golden 渲染样本 |
+| [contributing.md](contributing.md) | 测试分层与命令、golden 回归、文档维护约定、PR 流程 |
+| [ROADMAP.md](ROADMAP.md) | 各能力当前状态 + 单一事实源重构进度（副本 → 派生） |
 
 ## 文档维护约定
 
-1. **单一事实来源**：每个主题只在一个文档里详细展开，其他地方用链接。例如配置项只在 [configuration.md](configuration.md) 维护，API 细节只在 [api.md](api.md) 维护。
-2. **与代码同步**：改了接口、配置、表结构、运行模式，必须同步对应参考文档；能力状态变化同步 [TODO.md](TODO.md)。
-3. **示例可执行**：文档中的命令应当能在仓库根目录直接复制运行（PowerShell 为主，节点侧命令用 bash）。
+1. **单一事实源**：每个主题只在一个文档里详细展开，其它地方用链接。配置只在 [reference/configuration.md](reference/configuration.md)、API 细节只在 [reference/api.md](reference/api.md)、字段只在 [reference/desired-state.md](reference/desired-state.md)、表结构只在 [reference/database.md](reference/database.md)。
+2. **与代码同步**：改了接口、配置、表结构、运行模式、schema，必须同步对应参考文档；能力状态变化同步 [ROADMAP.md](ROADMAP.md)。
+3. **示例可执行**：文档里的命令应当能在仓库根目录直接复制运行（PowerShell 为主，节点侧命令用 bash）。
+4. **交叉引用代码**：用 `path:line` 指向源码（如 `apps/control-server/app/services/materializer.py:33`），方便从文档跳进实现。
+5. 详细约定见 [contributing.md](contributing.md#文档维护约定)。

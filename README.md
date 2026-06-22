@@ -30,23 +30,21 @@ flowchart LR
     agent -->|snapshot / report / apply-result| server
 ```
 
-系统的安全模型是"发布期望状态、节点本地收敛、回报观察结果"——Control Server **不提供**远程 shell 或任意命令执行接口（见 [docs/security.md](docs/security.md)）。
+系统的安全模型是"发布期望状态、节点本地收敛、回报观察结果"——Control Server **不提供**远程 shell 或任意命令执行接口（见 [docs/internals/security.md](docs/internals/security.md)）。
 
 ## 文档入口
 
-完整文档索引见 **[docs/README.md](docs/README.md)**。快速跳转：
+完整文档索引见 **[docs/README.md](docs/README.md)**。文档按 Diátaxis 四层组织（教程 / 操作手册 / 参考 / 内部原理）。快速跳转：
 
 | 你想… | 看这里 |
 | --- | --- |
-| 从零上手 | [docs/tutorial.md](docs/tutorial.md) |
-| 部署到真实环境、接入节点、看健康、排错 | [docs/operations.md](docs/operations.md) |
-| 查接口 | [docs/api.md](docs/api.md) |
-| 查配置项 / 环境变量 | [docs/configuration.md](docs/configuration.md) |
-| 理解架构与数据流 | [docs/architecture.md](docs/architecture.md) |
-| 理解 `DesiredState` | [docs/desired-state.md](docs/desired-state.md) |
-| 理解 Agent 内部 | [docs/node-agent.md](docs/node-agent.md) |
-| 查数据库表 | [docs/database.md](docs/database.md) |
-| 跑测试 | [docs/testing.md](docs/testing.md) |
+| 先了解系统是什么 | [docs/overview.md](docs/overview.md) |
+| 从零上手 | [docs/tutorials/01-quickstart.md](docs/tutorials/01-quickstart.md) |
+| 部署到生产 | [docs/guides/deployment.md](docs/guides/deployment.md) |
+| 接入节点、看健康、排错 | [docs/guides/node-onboarding.md](docs/guides/node-onboarding.md) · [docs/guides/monitoring-and-troubleshooting.md](docs/guides/monitoring-and-troubleshooting.md) |
+| 查接口 / 配置 / 字段 / 表 | [docs/reference/](docs/reference/) |
+| 理解架构与数据流 | [docs/internals/architecture.md](docs/internals/architecture.md) |
+| 改代码 / 跑测试 | [docs/contributing.md](docs/contributing.md) |
 
 ## Runtime 目标形态
 
@@ -111,7 +109,7 @@ uvicorn app.main:app --app-dir apps/control-server --reload --host 0.0.0.0 --por
 
 - 服务地址：`http://127.0.0.1:8000`
 - OpenAPI：`http://127.0.0.1:8000/docs`
-- 全部环境变量见 [docs/configuration.md](docs/configuration.md#control-server)
+- 全部环境变量见 [docs/reference/configuration.md](docs/reference/configuration.md#control-server)
 
 ### 运行 Node Agent
 
@@ -147,7 +145,7 @@ python -m agent.main \
   --state-dir .agent-state
 ```
 
-单次模式输出 JSON 摘要，包含 `node_id`、`generation`、文件计划、容器计划、部署结果、运行快照和对账报告。运行模式详解见 [docs/node-agent.md](docs/node-agent.md#运行模式)。
+单次模式输出 JSON 摘要，包含 `node_id`、`generation`、文件计划、容器计划、部署结果、运行快照和对账报告。运行模式详解见 [docs/internals/node-agent.md](docs/internals/node-agent.md#运行模式)。
 
 ### 常用 API
 
@@ -165,7 +163,7 @@ curl -s -X POST \
   -d '{"event": "desired_state_updated", "reason": "manual"}'
 ```
 
-完整接口见 [docs/api.md](docs/api.md)。
+完整接口见 [docs/reference/api.md](docs/reference/api.md)。
 
 ### 测试
 
@@ -174,4 +172,4 @@ python -m pytest
 python -m compileall apps packages tests
 ```
 
-详细说明见 [docs/testing.md](docs/testing.md)。
+详细说明见 [docs/contributing.md](docs/contributing.md)。

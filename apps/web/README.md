@@ -1,42 +1,18 @@
-# sv
+# web
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+DN42 控制面的管理 Web UI：SvelteKit + `adapter-static` 的纯静态 SPA，独立托管，经 CORS + Bearer（token 存 localStorage）直连 Control Server 的 Admin API。
 
-## Creating a project
+文档（单一事实源在 `docs/`）：
 
-If you're seeing this, you've probably already done this step. Congrats!
+- 操作指南（登录、仪表盘、节点详情各页签、一键互联向导、审批、provision、审计）：[../../docs/guides/web-ui.md](../../docs/guides/web-ui.md)
+- 托管与 CORS：[../../docs/guides/deployment.md](../../docs/guides/deployment.md#web-ui-托管)
 
-```sh
-# create a new project
-npx sv create my-app
+开发与构建：
+
+```bash
+npm install
+npm run dev          # http://127.0.0.1:5173
+npm run build        # 产物在 build/（静态站，用 nginx/Caddy 托管）
 ```
 
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-npx sv@0.16.1 create --template minimal --types ts --install npm apps/web
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+控制面需把本 UI 的来源加入 `DN42_CONTROL_CORS_ORIGINS`。

@@ -1,68 +1,26 @@
-# Node Agent
+# node-agent
 
-Node Agent 是运行在 DN42 节点上的执行器。它读取 `DesiredState`，渲染配置文件，计算文件和容器变更，部署到本机 Docker，做本机收敛（热重载 BIRD、重放 WireGuard 脚本），并把结果上报给 Control Server。
+运行在 DN42 节点上的常驻执行器：读取 `DesiredState`，渲染配置，规划并部署到本机 Docker（直连 Docker Engine API，不用 docker-compose），做本机收敛（热重载 BIRD、重放 WireGuard 脚本），上报结果。
 
-完整说明见 [../../docs/node-agent.md](../../docs/node-agent.md)，配置见 [../../docs/configuration.md](../../docs/configuration.md#node-agent)。
+文档（单一事实源在 `docs/`）：
 
-## 快速运行
+- 内部原理（运行模式、守护循环、planner/convergence、collectors、self-heal、旁路任务）：[../../docs/internals/node-agent.md](../../docs/internals/node-agent.md)
+- CLI 全参数：[../../docs/reference/cli-and-scripts.md](../../docs/reference/cli-and-scripts.md) ｜ 配置：[../../docs/reference/configuration.md](../../docs/reference/configuration.md#node-agent)
 
-> 默认（不带 flag）即**常驻守护进程**：先 reconcile 一次，再连控制面 WebSocket，
-> 收到事件就自动 reconcile 并真实部署。reconcile 深度由 `--mode` 控制
-> （`apply` 默认 / `write-rendered` / `plan-only`）。
+代码结构速览：
 
-只使用内置 hkg1 示例演练，不连接 Control Server、不动本机：
+| 路径 | 说明 |
+| --- | --- |
+| `agent/main.py` | CLI 解析、模式分发 |
+| `agent/watch.py` | 守护循环：WS 订阅、门铃、consumer、旁路任务 |
+| `agent/orchestrator.py` | `run_once()` 六阶段 |
+| `agent/{planner,apply,collectors,render,secrets,health}/` | 决策 / 执行 / 观测 / 渲染 / WG 密钥 / 对账 |
+| `agent/tests/` | Node Agent 测试 |
+
+本地演练（不连控制面、不动机器）：
 
 ```bash
 python -m agent.main --plan-only --state-dir .agent-state
 ```
 
-连接 Control Server，只做规划：
-
-```bash
-python -m agent.main \
-  --controller-url http://127.0.0.1:8000 \
-  --enrollment-token enroll-token \
-  --requested-node-id edge1 \
-  --state-dir .agent-state \
-  --plan-only
-```
-
-连接 Control Server，单次完整部署后退出：
-
-```bash
-python -m agent.main \
-  --controller-url http://127.0.0.1:8000 \
-  --enrollment-token enroll-token \
-  --requested-node-id edge1 \
-  --state-dir .agent-state \
-  --once
-```
-
-常驻守护进程（生产默认形态）：
-
-```bash
-python -m agent.main --config /etc/dn42-control/agent.toml
-```
-
-## 配置
-
-配置来源优先级：默认值 → `agent.toml` → 环境变量 `DN42_AGENT_*` → CLI 参数。
-全部配置项见 [../../docs/configuration.md](../../docs/configuration.md#node-agent)，示例配置见 `agent.example.toml`。
-
-## 部署方式
-
-agent 通过 Python Docker SDK 直连 Docker Engine API：创建网络、构建镜像、
-按依赖拓扑创建容器，以及容器内 exec / 文件推送，全部走同一个 socket，
-**不依赖 docker / docker compose CLI 二进制**。
-
-容器编排完全由数据驱动：容器定义（网络、端口、挂载、依赖）以
-`DesiredState.runtime` 的结构化数据从控制面数据库直达 Engine API，
-router 镜像的 Dockerfile 也由 agent 按 `runtime.router_dockerfile` 在内存
-生成、经 Engine API `fileobj` 构建。渲染目录只包含配置文件,**不存在任何
-编排文件或构建文件**。
-
-## 测试
-
-```bash
-python -m pytest apps/node-agent/agent/tests -q
-```
+常驻（生产默认）：`python -m agent.main --config /etc/dn42-control/agent.toml`。完整上手见 [../../docs/tutorials/01-quickstart.md](../../docs/tutorials/01-quickstart.md)。

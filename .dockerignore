@@ -21,6 +21,7 @@ examples/two-internal-one-ebgp-demo/
 .idea/
 .claude
 logs/
+wireguard-tools/
 **/*.log
 
 # 秘密与本地凭据：.gitignore 排除不等于 build context 排除。
