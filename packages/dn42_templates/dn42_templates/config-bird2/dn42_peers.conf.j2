@@ -5,8 +5,14 @@
 {%- set export_mode = peer_config.bgp.get('export_mode') or 'filter' -%}
 {%- set _imp_limit = peer_config.bgp.get('import_limit') or dn42_import_limit -%}
 {%- set _imp_action = peer_config.bgp.get('import_limit_action') or dn42_import_limit_action -%}
-        import where dn42_import_{{ import_mode }}(0,{{ _dn42_bandwidth }},{{ dn42_encryption }});
-        export where dn42_export_{{ export_mode }}(0,{{ _dn42_bandwidth }},{{ dn42_encryption }});
+{%- set _local_pref = peer_config.bgp.get('local_pref') -%}
+{%- set _lat = peer_config.bgp.get('link_latency') or 0 -%}
+{%- if _local_pref is not none -%}
+import filter { bgp_local_pref = {{ _local_pref }}; dn42_import_{{ import_mode }}({{ _lat }},{{ _dn42_bandwidth }},{{ dn42_encryption }}); };
+{%- else -%}
+import where dn42_import_{{ import_mode }}({{ _lat }},{{ _dn42_bandwidth }},{{ dn42_encryption }});
+{%- endif %}
+        export where dn42_export_{{ export_mode }}({{ _lat }},{{ _dn42_bandwidth }},{{ dn42_encryption }});
 {% if _imp_limit %}        import limit {{ _imp_limit }} action {{ _imp_action }};
 {% endif %}        import table;
 {%- endmacro -%}

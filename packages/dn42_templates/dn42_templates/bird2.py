@@ -156,6 +156,8 @@ def build_config_bird2_context(
         "rpki_ip": rpki_ip,
         "static_routes4": bird.static_routes4,
         "static_routes6": bird.static_routes6,
+        "cold_potato_med": bird.cold_potato_med,
+        "route_local_pref": [r.model_dump(mode="json") for r in bird.route_local_pref],
         "wg_peers": _wireguard_peer_contexts(state),
         "gre_peers": [],
         "route_collectors": _route_collector_contexts(state),
@@ -306,6 +308,8 @@ def _wireguard_peer_contexts(state: DesiredState) -> list[dict[str, Any]]:
                     "export_mode": _first_session_value(sessions, "export_mode"),
                     "import_limit": _first_session_value(sessions, "import_limit"),
                     "import_limit_action": _first_session_value(sessions, "import_limit_action"),
+                    "local_pref": _first_session_value(sessions, "local_pref"),
+                    "link_latency": _first_session_value(sessions, "link_latency"),
                     "mp_bgp": any(
                         session.address_family == AddressFamily.MP_BGP for session in sessions
                     ),

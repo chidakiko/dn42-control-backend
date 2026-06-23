@@ -55,6 +55,9 @@ class BgpSessionSpec(StrictModel):
         route_reflector_client: 是否把该对端视为 RR client。
         import_limit: 本会话导入前缀上限（per channel）覆盖；`None` 用节点级默认。
         import_limit_action: 超限动作覆盖；`None` 用节点级默认。
+        local_pref: 本会话导入路由的 local-pref 覆盖；`None` 用 BIRD 默认。用于让某入口学到的
+            前缀在 fleet iBGP 中胜出，消除非对称选路。⚠️ 整条会话生效，勿用于 transit peer。
+        link_latency: 本会话链路 DN42 延迟档（1-9）；设了就打 (64511, 档) 延迟社区。仅可见性/信令。
         enabled: 当前会话是否参与最终渲染。
     """
 
@@ -75,6 +78,15 @@ class BgpSessionSpec(StrictModel):
     # ``Bird2ConfigSpec.import_limit`` / ``import_limit_action``。
     import_limit: int | None = Field(default=None, ge=1)
     import_limit_action: ImportLimitAction | None = None
+    # 本会话导入路由的 local-pref 覆盖；``None`` 用 BIRD 默认（eBGP=100）。在某入口设高值，
+    # 让该入口学到的前缀经 iBGP 传播后在全 fleet 胜出——修复「去程从 A 入口、回程从 B 入口」
+    # 的非对称选路（见 docs/guides/monitoring-and-troubleshooting.md postmortem）。
+    local_pref: int | None = Field(default=None, ge=0, le=4294967295)
+    # 本会话 WG 链路的 DN42 延迟档（1-9，对数分档：1=<2.7ms / 4=<55ms / 9=极高）。设了就在
+    # import+export 时给路由打 (64511, 档) 延迟社区（沿路径取最差档），让 looking-glass / 对端
+    # 看到真实链路质量。``None`` = 不打（等同 0）。⚠️ 仅作可见性/信令——本 fleet **不**据此设
+    # local_pref：latency 社区只含 eBGP 链路、不含 fleet 内部跳数，据它选路会让节点弃近就远。
+    link_latency: int | None = Field(default=None, ge=1, le=9)
     enabled: bool = True
 
     @field_validator("source_address")
@@ -228,6 +240,29 @@ class BgpLargeCommunitySpec(StrictModel):
         return value
 
 
+class RouteLocalPrefSpec(StrictModel):
+    """对单个前缀的 local-pref 覆盖——精细路由调优位。
+
+    eBGP 导入时对**精确匹配该前缀**的路由设 ``bgp_local_pref``，**只影响这一个前缀**、不波及
+    session 其余路由（避免对 transit peer 整条会话抬权造成的 fleet 级爆炸半径——见
+    docs/guides/monitoring-and-troubleshooting.md postmortem）。仅本节点导入侧生效、经 iBGP
+    传播；不创建/不导出路由。要让全 fleet 优先某入口，只需在该入口节点配一条即可。
+
+    Attributes:
+        prefix: 精确匹配的目标前缀（v4 或 v6 网络，如 ``172.20.0.160/27``）。
+        local_pref: 命中后设置的 BGP local-pref（越大越优；eBGP 默认 100）。
+    """
+
+    prefix: str
+    local_pref: int = Field(ge=0, le=4294967295)
+
+    @field_validator("prefix")
+    @classmethod
+    def validate_prefix(cls, value: str) -> str:
+        validate_ip_network(value)
+        return value
+
+
 class Bird2ConfigSpec(StrictModel):
     """BIRD2 模板所需的高层配置。
 
@@ -249,6 +284,10 @@ class Bird2ConfigSpec(StrictModel):
         stub_ifnames_append: 附加到默认 stub 接口集合中的接口名列表。
         static_routes4: 需要注入 BIRD 的 IPv4 静态路由表达式列表。
         static_routes6: 需要注入 BIRD 的 IPv6 静态路由表达式列表。
+        cold_potato_med: 同区域 cold-potato 偏好的 MED 值（越低越优，默认 50）。eBGP 导入时给
+            带本节点同大区 region 社区（或无 region）的路由设此 MED、跨区域保持 100，优先就近。
+        route_local_pref: per-prefix local-pref 覆盖列表（精细路由调优，按前缀精确匹配，不波及
+            session 其余路由）。
     """
 
     region: Dn42OriginRegionCommunity | None = None
@@ -266,6 +305,8 @@ class Bird2ConfigSpec(StrictModel):
     stub_ifnames_append: list[str] = Field(default_factory=list)
     static_routes4: list[str] = Field(default_factory=list)
     static_routes6: list[str] = Field(default_factory=list)
+    cold_potato_med: int = Field(default=50, ge=0, le=4294967295)
+    route_local_pref: list[RouteLocalPrefSpec] = Field(default_factory=list)
 
     @field_validator("static_routes4", "static_routes6")
     @classmethod

@@ -69,6 +69,75 @@ def test_demo_renders_internal_and_ebgp_topology() -> None:
     assert "protocol bgp ebgp_4242420000_pvg1_v4" in hutao_peers
 
 
+def test_session_local_pref_renders_default_bgp_local_pref() -> None:
+    """会话设 ``local_pref`` → 渲染出 ``default bgp_local_pref N``；不设则不出现。
+
+    这是「非对称选路」修复的渲染侧：在某入口给某 AS 的会话抬 local_pref，使该入口学到的
+    前缀经 iBGP 传播后在全 fleet 胜出，去/回程走同一对等口。
+    """
+
+    lab = load_lab_module()
+    node = next(iter(lab.NODES.values()))
+    state = lab.build_internal_state(node)
+
+    baseline = next(
+        f.content for f in render_desired_state(state) if f.path == "bird/dn42_peers.conf"
+    )
+    assert "bgp_local_pref" not in baseline  # 默认不发，沿用 BIRD 默认
+    assert "import where dn42_import_filter" in baseline  # 默认用 where 形式
+
+    assert state.bgp_sessions, "demo 内部节点应至少有一条 eBGP 会话"
+    bumped = state.bgp_sessions[0].model_copy(update={"local_pref": 150})
+    state2 = state.model_copy(update={"bgp_sessions": [bumped, *state.bgp_sessions[1:]]})
+    peers = next(
+        f.content for f in render_desired_state(state2) if f.path == "bird/dn42_peers.conf"
+    )
+    # local_pref 用 import filter 形式落地（default bgp_local_pref 非合法 BIRD 语法）。
+    assert "import filter { bgp_local_pref = 150; dn42_import_filter(" in peers
+
+
+def test_community_route_tuning_blocks() -> None:
+    """社区/路由调优三块：link_latency 打 latency 社区、cold_potato_med 可配、per-prefix local_pref。"""
+
+    from dn42_schemas import RouteLocalPrefSpec
+
+    lab = load_lab_module()
+    node = next(iter(lab.NODES.values()))
+    state = lab.build_internal_state(node)
+
+    # 块1：link_latency 传进 import/export 过滤器（不再写死 0）。
+    sess = state.bgp_sessions[0].model_copy(update={"link_latency": 4})
+    # 块2：cold_potato_med 可配。块3：per-prefix local_pref（v4 + v6 各一）。
+    bird = state.bird.model_copy(
+        update={
+            "cold_potato_med": 30,
+            "route_local_pref": [
+                RouteLocalPrefSpec(prefix="172.20.0.160/27", local_pref=200),
+                RouteLocalPrefSpec(prefix="fd00:1234::/48", local_pref=150),
+            ],
+        }
+    )
+    state2 = state.model_copy(update={"bgp_sessions": [sess, *state.bgp_sessions[1:]], "bird": bird})
+    rendered = {f.path: f.content for f in render_desired_state(state2)}
+    peers = rendered["bird/dn42_peers.conf"]
+    filters = rendered["bird/custom_filters.conf"]
+
+    # 块1：latency=4 进 import + export。
+    assert "dn42_import_filter(4,23,34)" in peers
+    assert "dn42_export_filter(4,23,34)" in peers
+    # 块2：cold-potato MED 配置化。
+    assert "define COLD_POTATO_MED = 30;" in filters
+    assert "bgp_med = COLD_POTATO_MED;" in filters
+    # 块3：per-prefix local_pref，带类型守卫，v4/v6 各一。
+    assert "if (net.type = NET_IP4 && net = 172.20.0.160/27) then bgp_local_pref = 200;" in filters
+    assert "if (net.type = NET_IP6 && net = fd00:1234::/48) then bgp_local_pref = 150;" in filters
+
+    # 默认（不设）时不渲染这些——不影响存量。
+    base = {f.path: f.content for f in render_desired_state(state)}
+    assert "bgp_local_pref =" not in base["bird/custom_filters.conf"]
+    assert "dn42_import_filter(0," in base["bird/dn42_peers.conf"]
+
+
 def _published_ports(state) -> set[tuple[int, int, str]]:
     published: set[tuple[int, int, str]] = set()
     for service in state.runtime.services:

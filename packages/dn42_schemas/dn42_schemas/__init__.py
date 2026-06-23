@@ -65,6 +65,7 @@ from .routing import (
     DummyInterfaceSpec,
     IgpAdjacencySpec,
     InternalTopologySpec,
+    RouteLocalPrefSpec,
 )
 from .runtime import (
     BuildSpec,
@@ -135,6 +136,7 @@ __all__ = [
     "RecoveryPublicKeyResponse",
     "ReconciliationReport",
     "render_port_publish",
+    "RouteLocalPrefSpec",
     "RouterRuntimeSpec",
     "RouterDockerfileSpec",
     "RoutingTableSnapshot",

@@ -21,6 +21,7 @@
 	import NodeDnsTab from '$lib/components/node/NodeDnsTab.svelte';
 	import InternalTopologyTab from '$lib/components/node/InternalTopologyTab.svelte';
 	import AgentTokensTab from '$lib/components/node/AgentTokensTab.svelte';
+	import RouteTuningTab from '$lib/components/node/RouteTuningTab.svelte';
 	import NodeTrends from '$lib/components/node/NodeTrends.svelte';
 	import NodeSelfMetrics from '$lib/components/node/NodeSelfMetrics.svelte';
 
@@ -47,6 +48,7 @@
 		{ id: 'bgp', key: 'node.tab.bgp' },
 		{ id: 'internal', key: 'node.tab.internal' },
 		{ id: 'routing', key: 'node.tab.routing' },
+		{ id: 'tuning', key: 'node.tab.tuning' },
 		{ id: 'dns', key: 'node.tab.dns' },
 		{ id: 'generations', key: 'node.tab.generations' },
 		{ id: 'status', key: 'node.tab.status' },
@@ -365,6 +367,8 @@
 			<InternalTopologyTab {nodeId} />
 		{:else if tab === 'routing'}
 			<RoutingTab {nodeId} />
+		{:else if tab === 'tuning'}
+			<RouteTuningTab {nodeId} />
 		{:else if tab === 'generations'}
 			<GenerationsTab {nodeId} onchange={loadNode} />
 		{:else if tab === 'status'}
