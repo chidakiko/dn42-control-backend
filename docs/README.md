@@ -9,9 +9,9 @@
 | 参考 | [`reference/`](reference/) | 这个接口/配置/字段/表到底是什么？ | 查得到、求精确 |
 | 内部原理 | [`internals/`](internals/) | 系统为什么这样设计、怎么运转？ | 解释、配图 |
 
-## 我该读哪篇？
+## 按场景选读
 
-| 你的情况 | 从这里开始 |
+| 场景 | 从这里开始 |
 | --- | --- |
 | 完全没接触过本项目 | [overview.md](overview.md) → [tutorials/01-quickstart.md](tutorials/01-quickstart.md) |
 | 要把系统部署到生产 | [guides/deployment.md](guides/deployment.md) |

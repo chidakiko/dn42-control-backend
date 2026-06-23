@@ -32,7 +32,7 @@ flowchart LR
    ```bash
    curl -s "http://127.0.0.1:8000/api/v1/admin/registrations?status=pending"
    curl -s -X POST "http://127.0.0.1:8000/api/v1/admin/registrations/3/approve" \
-     -H "Content-Type: application/json" -d '{"note": "确认是我的机器"}'
+     -H "Content-Type: application/json" -d '{"note": "已确认节点归属"}'
    ```
 
 3. **批准 ≠ 直接能用**：还需下发配置（下面任一接入方式）。
@@ -74,7 +74,7 @@ provision 是幂等的（整节点落库 + materialize），被 seed、导入脚
 
 ## 逐资源 CRUD
 
-从零精细搭建：先 `POST /admin/nodes` 建节点，再逐个加 peering / 接口 / BGP 会话 / DNS 组订阅。每次写入都触发 materialize 与门铃。用 Web UI 的「一键互联」向导最省事，见 [peering.md](peering.md) 与 [web-ui.md](web-ui.md)。
+从零精细搭建：先 `POST /admin/nodes` 建节点，再逐个加 peering / 接口 / BGP 会话 / DNS 组订阅。每次写入都触发 materialize 与门铃。Web UI 的「一键互联」向导步骤最少，见 [peering.md](peering.md) 与 [web-ui.md](web-ui.md)。
 
 ## Token 生命周期
 

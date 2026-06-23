@@ -40,7 +40,7 @@ DN42_CONTROL_RECOVERY_PUBLIC_KEY=/etc/dn42-control/recovery-public.pem
 
 文件缺失会 fail-fast（见 [../reference/configuration.md](../reference/configuration.md)）。配好后控制面通过 `GET /api/v1/agent/recovery-public-key` 把公钥 + 指纹下发给 agent。
 
-## 三、节点自动 escrow（无需人工）
+## 三、节点 escrow（agent 首轮自动完成）
 
 agent 首轮处理 WireGuard 私钥时：
 

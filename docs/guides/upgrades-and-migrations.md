@@ -27,7 +27,7 @@ bash deploy/agent_pip_rollout.sh <ssh-target> <key-path> [ssh-port]
 
 1. `scp dist/*.whl` 到节点本地 `/opt/dn42-wheels`（私有仓库 = pip `--find-links` 目录）。
 2. `pip install -U --no-index --find-links /opt/dn42-wheels/ dn42-common dn42-schemas dn42-runtime dn42-templates dn42-node-agent`：
-   - `--no-index` 全程离线，不碰 PyPI/镜像源（避开中国/香港镜像源坑）。
+   - `--no-index` 全程离线，不碰 PyPI/镜像源（规避中国/香港镜像源的已知问题）。
    - **显式列全 5 个包**：pip 默认 `only-if-needed` 不会主动升无版本约束的依赖，必须逐个点名。
 3. 重启 `dn42-node-agent.service` 并回显 `pip list | grep dn42`。
 

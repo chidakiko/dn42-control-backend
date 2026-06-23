@@ -1,6 +1,6 @@
 # 架构
 
-本文说明系统如何把控制平面的数据库记录变成节点上的 Docker、WireGuard、BIRD、RPKI 和 DNS runtime，以及节点状态如何回流到控制面。读完你会理解"组件—边界—数据流—变更闭环"的全貌。各组件内部细节见 [control-server.md](control-server.md)、[node-agent.md](node-agent.md)、[shared-packages.md](shared-packages.md)。
+本文说明系统如何把控制平面的数据库记录变成节点上的 Docker、WireGuard、BIRD、RPKI 和 DNS runtime，以及节点状态如何回流到控制面，覆盖"组件—边界—数据流—变更闭环"的全貌。各组件内部细节见 [control-server.md](control-server.md)、[node-agent.md](node-agent.md)、[shared-packages.md](shared-packages.md)。
 
 ## 组件职责
 
