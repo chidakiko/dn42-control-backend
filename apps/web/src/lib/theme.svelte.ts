@@ -1,39 +1,64 @@
-// Light/dark theme, persisted, applied via `data-theme` on <html>. Defaults to
-// light (Radar-style). The CSS in app.css keys off [data-theme="dark"].
+// Theme: light / dark / system. Persisted as a preference; `system` follows the
+// OS via prefers-color-scheme and keeps tracking it live. The resolved value is
+// applied via `data-theme` on <html>; CSS in app.css keys off [data-theme="dark"].
 
 import { browser } from '$app/environment';
 
+export type ThemePref = 'light' | 'dark' | 'system';
 export type ThemeMode = 'light' | 'dark';
 
 const KEY = 'dn42.theme';
+const ORDER: ThemePref[] = ['system', 'light', 'dark'];
 
-function detect(): ThemeMode {
-	if (!browser) return 'light';
+function readPref(): ThemePref {
+	if (!browser) return 'system';
 	const saved = localStorage.getItem(KEY);
-	return saved === 'dark' ? 'dark' : 'light';
+	return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
+}
+
+function systemMode(): ThemeMode {
+	if (!browser) return 'light';
+	return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
 class Theme {
-	mode = $state<ThemeMode>(detect());
+	/** User preference: may be `system`. */
+	pref = $state<ThemePref>(readPref());
+	/** Resolved light/dark actually applied to the document. */
+	mode = $state<ThemeMode>('light');
 
 	constructor() {
-		if (browser) this.#apply();
+		if (!browser) return;
+		this.mode = this.pref === 'system' ? systemMode() : this.pref;
+		this.#apply();
+		// Track OS changes so `system` stays live without a reload.
+		window
+			.matchMedia('(prefers-color-scheme: dark)')
+			.addEventListener('change', () => {
+				if (this.pref === 'system') {
+					this.mode = systemMode();
+					this.#apply();
+				}
+			});
 	}
 
 	#apply() {
-		document.documentElement.dataset.theme = this.mode;
+		if (browser) document.documentElement.dataset.theme = this.mode;
 	}
 
-	set(mode: ThemeMode) {
-		this.mode = mode;
+	set(pref: ThemePref) {
+		this.pref = pref;
+		this.mode = pref === 'system' ? systemMode() : pref;
 		if (browser) {
-			localStorage.setItem(KEY, mode);
+			localStorage.setItem(KEY, pref);
 			this.#apply();
 		}
 	}
 
+	/** Cycle system → light → dark → system. */
 	toggle() {
-		this.set(this.mode === 'dark' ? 'light' : 'dark');
+		const next = ORDER[(ORDER.indexOf(this.pref) + 1) % ORDER.length];
+		this.set(next);
 	}
 }
 

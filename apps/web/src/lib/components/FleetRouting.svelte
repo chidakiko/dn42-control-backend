@@ -1,11 +1,13 @@
 <script lang="ts">
-	// Fleet-wide routing overview for the dashboard: total table size across all
-	// nodes, IPv4/IPv6 split, RPKI validity, and a compact per-node breakdown.
+	// Fleet-wide routing overview (Cloudflare Radar "routing stats" style): a stat
+	// strip of big numbers + half-donut gauges for RPKI and address-family splits,
+	// plus a per-node breakdown table.
 	import { untrack } from 'svelte';
 	import { api, errorMessage } from '$lib/api';
 	import type { FleetRouting } from '$lib/types';
 	import Donut from '$lib/components/charts/Donut.svelte';
 	import MiniBar from '$lib/components/charts/MiniBar.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import { autoRefresh } from '$lib/refresh.svelte';
 	import { relTime } from '$lib/format';
 	import { t } from '$lib/i18n.svelte';
@@ -42,7 +44,6 @@
 				]
 			: []
 	);
-
 	let rpkiSegments = $derived(
 		data
 			? [
@@ -53,19 +54,24 @@
 			: []
 	);
 
-	// RPKI 甜甜圈中心：有效率%（让人一眼知道这是 RPKI 且多少前缀有效）。
-	let rpkiValidPct = $derived.by(() => {
-		const r = data?.summary.rpki;
-		if (!r) return '';
-		const tot = r.valid + r.invalid + r.not_found;
-		return tot > 0 ? Math.round((r.valid / tot) * 100) + '%' : '';
-	});
+	const pct = (v: number, tot: number) => (tot > 0 ? Math.round((v / tot) * 100) : 0);
+	let rpkiTotal = $derived(data ? data.summary.rpki.valid + data.summary.rpki.invalid + data.summary.rpki.not_found : 0);
+	let famTotal = $derived(data ? data.summary.route_count_v4 + data.summary.route_count_v6 : 0);
+	let validPct = $derived(data ? pct(data.summary.rpki.valid, rpkiTotal) : 0);
+	let v4pct = $derived(data ? pct(data.summary.route_count_v4, famTotal) : 0);
 
 	let maxRoutes = $derived(data ? Math.max(1, ...data.nodes.map((n) => n.route_count)) : 1);
+	const fmt = (n: number) => n.toLocaleString();
 </script>
 
-<div class="spread head">
-	<h2>{t('dash.routing.title')}</h2>
+<div class="page-head" style="margin-bottom:1rem">
+	<div>
+		<div class="ph-title">
+			<Icon name="route" size={20} />
+			<h2 style="margin:0; font-size:1.15rem">{t('dash.routing.title')}</h2>
+		</div>
+		<p class="ph-sub">{t('dash.routing.subtitle')}</p>
+	</div>
 	{#if data}<span class="faint">{t('dash.routing.reporting', data.summary.nodes_reporting)}</span>{/if}
 </div>
 
@@ -76,33 +82,48 @@
 {:else if data && data.summary.nodes_reporting === 0}
 	<div class="card"><div class="empty">{t('dash.routing.empty')}</div></div>
 {:else if data}
-	<div class="card routing-card">
-		<div class="donut-wrap">
-			<Donut
-				segments={familySegments}
-				size={150}
-				thickness={22}
-				centerValue={data.summary.route_count}
-				centerLabel={t('routing.routes')}
-			/>
-			<div class="legend">
-				{#each familySegments as s (s.label)}
-					<span><span class="sw" style="background:{s.color}"></span>{s.label} <b>{s.value}</b></span>
-				{/each}
+	<div class="card stats-card">
+		<div class="strip">
+			<div class="stat">
+				<span class="lbl">{t('routing.total')}</span>
+				<span class="num">{fmt(data.summary.route_count)}</span>
+			</div>
+			<div class="stat">
+				<span class="lbl">{t('routing.v4')}</span>
+				<span class="num" style="color:{V4_COLOR}">{fmt(data.summary.route_count_v4)}</span>
+			</div>
+			<div class="stat">
+				<span class="lbl">{t('routing.v6')}</span>
+				<span class="num" style="color:{V6_COLOR}">{fmt(data.summary.route_count_v6)}</span>
+			</div>
+			<div class="stat">
+				<span class="lbl">{t('routing.rpki.valid')}</span>
+				<span class="num">{fmt(data.summary.rpki.valid)} <small>({pct(data.summary.rpki.valid, rpkiTotal)}%)</small></span>
+			</div>
+			<div class="stat">
+				<span class="lbl">{t('routing.rpki.invalid')}</span>
+				<span class="num">{fmt(data.summary.rpki.invalid)} <small>({pct(data.summary.rpki.invalid, rpkiTotal)}%)</small></span>
+			</div>
+			<div class="stat">
+				<span class="lbl">{t('routing.rpki.not_found')}</span>
+				<span class="num">{fmt(data.summary.rpki.not_found)} <small>({pct(data.summary.rpki.not_found, rpkiTotal)}%)</small></span>
 			</div>
 		</div>
-		<div class="donut-wrap">
-			<Donut
-				segments={rpkiSegments}
-				size={150}
-				thickness={22}
-				centerValue={rpkiValidPct}
-				centerLabel={t('routing.rpki.center')}
-			/>
-			<div class="legend">
-				{#each rpkiSegments as s (s.label)}
-					<span><span class="sw" style="background:{s.color}"></span>{s.label} <b>{s.value}</b></span>
-				{/each}
+
+		<div class="gauges">
+			<div class="gauge">
+				<div class="g-label">
+					<span class="dot" style="background:var(--c-ok)"></span>{t('routing.rpki.valid')}
+					<b>{validPct}%</b>
+				</div>
+				<Donut half segments={rpkiSegments} size={150} thickness={18} />
+			</div>
+			<div class="gauge">
+				<div class="g-label">
+					<span class="dot" style="background:{V4_COLOR}"></span>IPv4 <b>{v4pct}%</b>
+					<span class="sep">·</span>IPv6 <b>{100 - v4pct}%</b>
+				</div>
+				<Donut half segments={familySegments} size={150} thickness={18} />
 			</div>
 		</div>
 	</div>
@@ -124,7 +145,7 @@
 						<td><a href="/nodes/{n.node_id}?tab=routing" class="mono">{n.node_id}</a></td>
 						<td class="r">
 							<div class="routes-cell">
-								<span class="mono">{n.route_count}</span>
+								<span class="mono">{fmt(n.route_count)}</span>
 								<MiniBar value={n.route_count} max={maxRoutes} color={V4_COLOR} />
 							</div>
 						</td>
@@ -139,42 +160,80 @@
 {/if}
 
 <style>
-	.head {
-		margin-bottom: 0.75rem;
-		align-items: baseline;
-	}
-	.head h2 {
-		margin: 0;
-		font-size: 1.1rem;
-	}
-	.routing-card {
+	.stats-card {
 		display: flex;
 		align-items: center;
-		gap: 2.5rem;
+		justify-content: space-between;
+		gap: 2rem;
 		flex-wrap: wrap;
 	}
-	.donut-wrap {
+	/* stat strip: bordered cells of label + big number (Radar-style) */
+	.strip {
 		display: flex;
-		align-items: center;
-		gap: 1rem;
+		flex-wrap: wrap;
+		flex: 1;
+		min-width: 280px;
 	}
-	.legend {
+	.stat {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
-		font-size: 0.82rem;
+		gap: 0.25rem;
+		padding: 0.1rem 1.1rem;
+		border-left: 1px solid var(--border);
+	}
+	.stat:first-child {
+		border-left: none;
+		padding-left: 0;
+	}
+	.stat .lbl {
+		font-size: 0.72rem;
+		color: var(--text-faint);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		white-space: nowrap;
+	}
+	.stat .num {
+		font-size: 1.45rem;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		line-height: 1.1;
+	}
+	.stat .num small {
+		font-size: 0.8rem;
+		font-weight: 600;
 		color: var(--text-dim);
 	}
-	.legend span {
+	.gauges {
+		display: flex;
+		gap: 1.5rem;
+		flex: none;
+	}
+	.gauge {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.g-label {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.35rem;
+		font-size: 0.8rem;
+		color: var(--text-dim);
+		white-space: nowrap;
 	}
-	.sw {
-		width: 11px;
-		height: 11px;
-		border-radius: 3px;
-		display: inline-block;
+	.g-label b {
+		color: var(--text);
+		font-variant-numeric: tabular-nums;
+	}
+	.g-label .dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+	}
+	.g-label .sep {
+		color: var(--text-faint);
+		margin: 0 0.1rem;
 	}
 	th.r,
 	td.r {

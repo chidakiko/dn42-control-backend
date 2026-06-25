@@ -8,12 +8,15 @@
 	import { autoRefresh } from '$lib/refresh.svelte';
 	import { t } from '$lib/i18n.svelte';
 	import Sparkline from '../charts/Sparkline.svelte';
+	import Skeleton from '../Skeleton.svelte';
+	import { fade } from 'svelte/transition';
 	import type { AgentSelfMetrics, StatusEvent } from '$lib/types';
 
 	let { nodeId }: { nodeId: string } = $props();
 
 	let current = $state<AgentSelfMetrics | null>(null);
 	let snaps = $state<StatusEvent[]>([]);
+	let loaded = $state(false);
 
 	function selfMetricsOf(payload: Record<string, unknown> | null | undefined): AgentSelfMetrics | null {
 		const sm = (payload as { self_metrics?: AgentSelfMetrics } | null | undefined)?.self_metrics;
@@ -30,6 +33,8 @@
 			snaps = ev.events;
 		} catch {
 			/* overview is best-effort */
+		} finally {
+			loaded = true;
 		}
 	}
 	$effect(() => {
@@ -50,8 +55,21 @@
 	let cpuHigh = $derived((current?.cpu_percent ?? 0) >= 80);
 </script>
 
-{#if hasData && current}
+{#if !loaded}
 	<div class="self">
+		<span class="title">{t('selfmetrics.title')}</span>
+		<div class="cards">
+			{#each Array(5) as _, i (i)}
+				<div class="mini">
+					<Skeleton w="3rem" h="0.66rem" />
+					<Skeleton w="4.5rem" h="1.5rem" />
+					<Skeleton h="30px" />
+				</div>
+			{/each}
+		</div>
+	</div>
+{:else if hasData && current}
+	<div class="self" in:fade={{ duration: 150 }}>
 		<span class="title">{t('selfmetrics.title')}</span>
 		<div class="cards">
 			<div class="mini">
@@ -60,7 +78,7 @@
 					<span class="val" class:bad={cpuHigh}>{fmt(current.cpu_percent)}<span class="pct">%</span></span>
 				</div>
 				{#if cpuSeries.length > 1}
-					<Sparkline values={cpuSeries} width={150} height={30} color={cpuHigh ? 'var(--c-bad)' : 'var(--c-ok)'} />
+					<Sparkline values={cpuSeries} width={150} height={30} color={cpuHigh ? 'var(--c-bad)' : 'var(--c-ok)'} interactive format={(v) => v + '%'} />
 				{/if}
 			</div>
 
@@ -71,7 +89,7 @@
 						<span class="val">{fmt(current.rss_mb)}<span class="pct">MB</span></span>
 					</div>
 					{#if rssSeries.length > 1}
-						<Sparkline values={rssSeries} width={150} height={30} color="var(--c-accent)" />
+						<Sparkline values={rssSeries} width={150} height={30} color="var(--c-accent)" interactive format={(v) => v + ' MB'} />
 					{/if}
 				</div>
 			{/if}
@@ -83,7 +101,7 @@
 						<span class="val">{fmt(current.last_routing_collect_seconds, 2)}<span class="pct">s</span></span>
 					</div>
 					{#if routingSeries.length > 1}
-						<Sparkline values={routingSeries} width={150} height={30} color="var(--c-accent)" />
+						<Sparkline values={routingSeries} width={150} height={30} color="var(--c-accent)" interactive format={(v) => v + ' s'} />
 					{/if}
 				</div>
 			{/if}

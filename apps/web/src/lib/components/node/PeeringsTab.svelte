@@ -4,6 +4,7 @@
 	import { toast } from '$lib/toast.svelte';
 	import type { PeeringIn, PeeringOut } from '$lib/types';
 	import { t } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import Modal from './../Modal.svelte';
 
 	let { nodeId, onchange }: { nodeId: string; onchange?: () => void } = $props();
@@ -101,7 +102,7 @@
 <div class="card-head">
 	<h3>{t('peer.title')} <span class="faint">({items.length})</span></h3>
 	<div class="inline">
-		<button class="btn sm" onclick={refresh} disabled={loading}>↻</button>
+		<button class="btn sm icon" onclick={refresh} disabled={loading} aria-label={t('common.refresh')}><Icon name="refresh" size={15} /></button>
 	</div>
 </div>
 <p class="faint" style="font-size:0.78rem; margin-top:-0.4rem">{t('peer.note')}</p>

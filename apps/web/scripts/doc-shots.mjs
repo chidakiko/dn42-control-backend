@@ -1,40 +1,51 @@
 // Documentation screenshots for docs/guides/web-ui.md.
 //
-// Captures the admin UI (zh locale) into docs/images/. Every shot is scoped to
-// the component it illustrates (a card / panel / dialog) — never the whole
-// browser window with the sidebar — so the docs stay focused and legible.
+// Captures the admin UI (zh locale, light theme) into docs/images/. Every shot
+// is scoped to the component it illustrates (a card / panel / dialog) — never
+// the whole browser window with the sidebar — so the docs stay focused.
 //
-// Requires a local stack with DEMO DATA already seeded (the production lifespan
-// no longer auto-seeds, and routing/trends/DNS pages are empty without agent
-// reports):
-//   1. control-server on :8001  (admin token "dev-admin-token", CORS *)
-//   2. python apps/web/scripts/seed_docshots.py   (provisions edge1 + feeds data)
-//   3. vite dev on :5174
-// Then, from apps/web:  node scripts/doc-shots.mjs
+// Data source is configurable via env (no secrets committed):
+//   DOCSHOTS_BASE   web origin to screenshot      (default http://localhost:5173)
+//   DOCSHOTS_API    control-server the UI talks to (default http://127.0.0.1:8001)
+//   DOCSHOTS_TOKEN  admin token                    (default dev-admin-token)
+//   DOCSHOTS_NODE   node id for detail/wizard pages (default edge1)
 //
-// See docs/guides/web-ui.md (## 截图怎么再生成) for the full one-liners.
+// Two ways to run:
+//   A) Local demo (leak-free, repo default):
+//        1. control-server on :8001  (token "dev-admin-token", CORS *)
+//        2. python apps/web/scripts/seed_docshots.py   (provisions edge1 + data)
+//        3. vite dev on :5174 ; then from apps/web:  DOCSHOTS_BASE=http://127.0.0.1:5174 node scripts/doc-shots.mjs
+//   B) Against a live fleet (real data): point env at it, e.g.
+//        DOCSHOTS_API=https://control-server.<fleet> DOCSHOTS_TOKEN=<token> \
+//        DOCSHOTS_NODE=<node> node scripts/doc-shots.mjs
+//      (the running web origin's control-server CORS must allow DOCSHOTS_BASE)
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 
-const BASE = 'http://127.0.0.1:5174';
-const API = 'http://127.0.0.1:8001';
-const TOKEN = 'dev-admin-token';
-const NODE = 'edge1';
+const BASE = process.env.DOCSHOTS_BASE || 'http://localhost:5173';
+const API = process.env.DOCSHOTS_API || 'http://127.0.0.1:8001';
+const TOKEN = process.env.DOCSHOTS_TOKEN || 'dev-admin-token';
+const NODE = process.env.DOCSHOTS_NODE || 'edge1';
 const OUT = '../../docs/images';
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 
-async function newCtx() {
-	const ctx = await browser.newContext({ viewport: { width: 1320, height: 1000 }, colorScheme: 'light', deviceScaleFactor: 2 });
+// auth=false → no token in localStorage (so /login shows the form).
+async function newCtx({ auth = true } = {}) {
+	const ctx = await browser.newContext({
+		viewport: { width: 1320, height: 1000 },
+		colorScheme: 'light',
+		deviceScaleFactor: 2
+	});
 	await ctx.addInitScript(
 		(a) => {
-			localStorage.setItem('dn42.admin.token', a.t);
+			if (a.auth) localStorage.setItem('dn42.admin.token', a.t);
 			localStorage.setItem('dn42.admin.apiBase', a.api);
 			localStorage.setItem('dn42.locale', 'zh');
 			localStorage.setItem('dn42.theme', 'light');
 		},
-		{ t: TOKEN, api: API }
+		{ t: TOKEN, api: API, auth }
 	);
 	return ctx;
 }
@@ -42,9 +53,9 @@ async function newCtx() {
 // Screenshot a single element (focused) rather than the full page.
 async function shotEl(page, selector, name, { nth = 0 } = {}) {
 	const el = page.locator(selector).nth(nth);
-	await el.waitFor({ state: 'visible', timeout: 8000 });
+	await el.waitFor({ state: 'visible', timeout: 10000 });
 	await el.scrollIntoViewIfNeeded();
-	await page.waitForTimeout(500); // let charts/sparklines settle
+	await page.waitForTimeout(700); // let charts / map / sparklines settle
 	await el.screenshot({ path: `${OUT}/${name}.png` });
 	console.log('shot', name);
 }
@@ -52,16 +63,17 @@ async function shotEl(page, selector, name, { nth = 0 } = {}) {
 async function open(ctx, path) {
 	const page = await ctx.newPage();
 	await page.goto(BASE + path, { waitUntil: 'networkidle' });
-	await page.waitForTimeout(1200);
+	await page.waitForTimeout(1400);
 	return page;
 }
 
 // --- focused, single-element shots on standalone pages ---
-// [name, path, selector] — selector is the component the doc section describes.
+// [name, path, selector, auth]
 const shots = [
 	['wui-login', '/login', '.login', false],
-	['wui-dashboard', '/', '.health-card', true],
-	['wui-fleet-routing', '/', '.routing-card', true],
+	['wui-dashboard', '/', '.doc-topology', true],
+	['wui-fleet-routing', '/', '.doc-routing', true],
+	['wui-traffic', '/', '.doc-traffic', true],
 	['wui-nodes', '/nodes', 'main .card', true],
 	['wui-registrations', '/registrations', 'main .card', true],
 	['wui-enrollment', '/enrollment-tokens', 'main .card', true],
@@ -69,9 +81,9 @@ const shots = [
 	['wui-audit', '/audit', 'main .card', true]
 ];
 
-for (const [name, path, selector] of shots) {
+for (const [name, path, selector, auth] of shots) {
 	try {
-		const ctx = await newCtx();
+		const ctx = await newCtx({ auth });
 		const page = await open(ctx, path);
 		await shotEl(page, selector, name);
 		await ctx.close();
@@ -80,44 +92,55 @@ for (const [name, path, selector] of shots) {
 	}
 }
 
-// --- DNS groups: expand a group's zones + a zone's records, then capture the
-//     whole content column (groups → zones → records) sans sidebar. ---
+// --- DNS groups: expand the first group's zones + the first zone's records,
+//     then capture the whole content column (groups → zones → records). ---
 try {
 	const ctx = await newCtx();
 	const page = await open(ctx, '/dns-groups');
-	// row action #0 = "区域" (select group) → reveals the zones card
-	await page.locator('table tbody tr').first().locator('.actions button').first().click();
-	await page.waitForTimeout(700);
-	// open the records of the populated forward zone (reverse zone sorts first but
-	// has no records) → reveals the records panel below the zones table
-	await page.locator('.card').last().locator('tr', { hasText: 'example.dn42' })
-		.locator('.actions button').first().click();
-	await page.waitForTimeout(700);
+	// best-effort expansion: first group row → 区域, then first zone row → 记录.
+	try {
+		await page.locator('table tbody tr').first().locator('.actions button').first().click();
+		await page.waitForTimeout(700);
+		await page.locator('.card').last().locator('table tbody tr').first()
+			.locator('.actions button').first().click();
+		await page.waitForTimeout(700);
+	} catch (e) {
+		console.error('warn dns-groups expansion', e.message);
+	}
 	await shotEl(page, 'main', 'wui-dns-groups');
 	await ctx.close();
 } catch (e) {
 	console.error('FAIL wui-dns-groups', e.message);
 }
 
-// --- node detail tabs — capture the tab's content card (or its headline
-//     component), which excludes the page chrome and sidebar. ---
-// TABS index: 0 overview · 1 peerings · 2 interfaces · 3 bgp · 4 internal ·
-//             5 routing · 6 dns · 7 generations · 8 status · 9 desired · 10 tokens
+// --- node detail — two-level tabs. Top groups (.tabs .tab):
+//       0 概览 · 1 互联 · 2 路由 · 3 DNS · 4 运维
+//     互联 sub-tabs (.subtabs .subtab): 0 Peering · 1 接口 · 2 BGP · 3 内部互联
+//     路由 sub-tabs: 0 路由表 · 1 路由调优
+// Capture the tab's content card (excludes page chrome + sidebar). ---
+async function openTab(page, group, sub) {
+	if (group != null) {
+		await page.locator('.tabs .tab').nth(group).click();
+		await page.waitForTimeout(400);
+	}
+	if (sub != null) {
+		await page.locator('.subtabs .subtab').nth(sub).click();
+		await page.waitForTimeout(400);
+	}
+	await page.waitForTimeout(800);
+}
 const tabShots = [
-	{ name: 'wui-node-overview', tab: null, sel: 'main .card' },
-	{ name: 'wui-node-interfaces', tab: 2, sel: 'main .card' },
-	{ name: 'wui-node-internal', tab: 4, sel: 'main .card' },
-	{ name: 'wui-node-routing', tab: 5, sel: '.donuts' },
-	{ name: 'wui-node-dns', tab: 6, sel: 'main .card' }
+	{ name: 'wui-node-overview', group: null, sub: null, sel: 'main .card' },
+	{ name: 'wui-node-interfaces', group: 1, sub: 1, sel: 'main .card' },
+	{ name: 'wui-node-internal', group: 1, sub: 3, sel: 'main .card' },
+	{ name: 'wui-node-routing', group: 2, sub: 0, sel: '.donuts' },
+	{ name: 'wui-node-dns', group: 3, sub: null, sel: 'main .card' }
 ];
 for (const s of tabShots) {
 	try {
 		const ctx = await newCtx();
 		const page = await open(ctx, `/nodes/${NODE}`);
-		if (s.tab !== null) {
-			await page.locator('.tabs .tab').nth(s.tab).click();
-			await page.waitForTimeout(1200);
-		}
+		await openTab(page, s.group, s.sub);
 		await shotEl(page, s.sel, s.name);
 		await ctx.close();
 	} catch (e) {
@@ -125,7 +148,8 @@ for (const s of tabShots) {
 	}
 }
 
-// --- peer interconnect wizard, step by step (the .dialog is already focused) ---
+// --- one-click interconnect wizard, step by step (the .dialog is focused).
+//     Fills demo values only — never clicks "创建对等连接", so nothing mutates. ---
 try {
 	const ctx = await newCtx();
 	const page = await open(ctx, `/nodes/${NODE}`);
@@ -145,26 +169,24 @@ try {
 	await page.getByRole('button', { name: '一键互联' }).click();
 	await page.waitForTimeout(700);
 
-	// step 1 — 基本
+	// ① 基本
 	await fill('名称', 'demo-peer');
 	await fill('对端 ASN', '4242421111');
 	await shotModal('wui-wizard-1');
 	await next();
 
-	// step 2 — WireGuard（接口名已按 peer 名自动带入）
-	await fill('本端地址', 'fe80::1/64');
+	// ② WireGuard（接口名按 peer 名自动带入；填公钥 + 链路本地对）
 	await fill('对端公钥', '+aFW7xRRTwOZ6w0EmrvqN4ng2QcFA0/9Wdu9GkdwJgQ=');
+	await fill('本端 link-local', 'fe80::1');
+	await fill('对端 link-local', 'fe80::2');
 	await shotModal('wui-wizard-2');
 	await next();
 
-	// step 3 — BGP（加一条 IPv6 链路本地会话，填源地址）
-	await page.locator('.dialog').getByRole('button', { name: 'IPv6 链路本地' }).click();
-	await page.waitForTimeout(400);
-	await fill('源地址', 'fe80::1');
+	// ③ BGP（主会话由链路本地对派生，只读展示）
 	await shotModal('wui-wizard-3');
 	await next();
 
-	// step 4 — 确认
+	// ④ 确认
 	await shotModal('wui-wizard-4');
 
 	await ctx.close();

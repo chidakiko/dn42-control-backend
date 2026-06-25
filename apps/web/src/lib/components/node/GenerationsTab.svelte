@@ -4,6 +4,7 @@
 	import { toast } from '$lib/toast.svelte';
 	import { fmtTime } from '$lib/format';
 	import { t } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import type { GenerationDiffOut, GenerationOut } from '$lib/types';
 	import Modal from './../Modal.svelte';
 	import JsonView from './../JsonView.svelte';
@@ -69,7 +70,7 @@
 
 <div class="card-head">
 	<h3>{t('gen.title')} <span class="faint">({items.length})</span></h3>
-	<button class="btn sm" onclick={refresh} disabled={loading}>↻</button>
+	<button class="btn sm icon" onclick={refresh} disabled={loading} aria-label={t('common.refresh')}><Icon name="refresh" size={15} /></button>
 </div>
 
 {#if loading && items.length === 0}

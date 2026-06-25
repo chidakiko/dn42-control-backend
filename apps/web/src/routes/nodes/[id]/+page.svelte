@@ -9,12 +9,13 @@
 	import { autoRefresh } from '$lib/refresh.svelte';
 	import type { NodeOut, PeeringOut, NodeHealthValue } from '$lib/types';
 	import HealthBadge from '$lib/components/HealthBadge.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import JsonEditor from '$lib/components/JsonEditor.svelte';
 	import JsonView from '$lib/components/JsonView.svelte';
 	import PeeringsTab from '$lib/components/node/PeeringsTab.svelte';
 	import PeerWizard from '$lib/components/node/PeerWizard.svelte';
-	import SpecResourceTab from '$lib/components/node/SpecResourceTab.svelte';
+	import SpecResourceTab, { type SpecField } from '$lib/components/node/SpecResourceTab.svelte';
 	import GenerationsTab from '$lib/components/node/GenerationsTab.svelte';
 	import StatusEventsTab from '$lib/components/node/StatusEventsTab.svelte';
 	import RoutingTab from '$lib/components/node/RoutingTab.svelte';
@@ -41,24 +42,64 @@
 		health === 'down' ? 'down' : health === 'stale' ? 'stale' : null
 	);
 
-	const TABS = [
-		{ id: 'overview', key: 'node.tab.overview' },
-		{ id: 'peerings', key: 'node.tab.peerings' },
-		{ id: 'interfaces', key: 'node.tab.interfaces' },
-		{ id: 'bgp', key: 'node.tab.bgp' },
-		{ id: 'internal', key: 'node.tab.internal' },
-		{ id: 'routing', key: 'node.tab.routing' },
-		{ id: 'tuning', key: 'node.tab.tuning' },
-		{ id: 'dns', key: 'node.tab.dns' },
-		{ id: 'generations', key: 'node.tab.generations' },
-		{ id: 'status', key: 'node.tab.status' },
-		{ id: 'desired', key: 'node.tab.desired' },
-		{ id: 'tokens', key: 'node.tab.tokens' }
+	// Two-level navigation: 5 top-level groups, each with sub-tabs. The content
+	// selector (`tab`) stays flat (the 12 content ids); the group is derived from
+	// it. Leaf groups (overview / dns) have no sub-tabs — the group id *is* the
+	// content id.
+	interface SubTab {
+		id: string;
+		key: string;
+	}
+	interface Group {
+		id: string;
+		key: string;
+		tabs: SubTab[];
+	}
+	const GROUPS: Group[] = [
+		{ id: 'overview', key: 'node.tab.overview', tabs: [] },
+		{
+			id: 'connectivity',
+			key: 'node.grp.connectivity',
+			tabs: [
+				{ id: 'peerings', key: 'node.tab.peerings' },
+				{ id: 'interfaces', key: 'node.tab.interfaces' },
+				{ id: 'bgp', key: 'node.tab.bgp' },
+				{ id: 'internal', key: 'node.tab.internal' }
+			]
+		},
+		{
+			id: 'routing-grp',
+			key: 'node.grp.routing',
+			tabs: [
+				{ id: 'routing', key: 'node.tab.routing' },
+				{ id: 'tuning', key: 'node.tab.tuning' }
+			]
+		},
+		{ id: 'dns', key: 'node.tab.dns', tabs: [] },
+		{
+			id: 'ops',
+			key: 'node.grp.ops',
+			tabs: [
+				{ id: 'generations', key: 'node.tab.generations' },
+				{ id: 'status', key: 'node.tab.status' },
+				{ id: 'desired', key: 'node.tab.desired' },
+				{ id: 'tokens', key: 'node.tab.tokens' }
+			]
+		}
 	];
+	// All valid content ids (leaf group id, or each sub-tab id).
+	const ALL_TAB_IDS = GROUPS.flatMap((g) => (g.tabs.length ? g.tabs.map((s) => s.id) : [g.id]));
+	// Default content id when a top-level group is clicked: its first sub-tab, or
+	// the group itself for leaf groups.
+	const groupContentId = (g: Group): string => (g.tabs.length ? g.tabs[0].id : g.id);
+	const groupOf = (tabId: string): Group =>
+		GROUPS.find((g) => g.id === tabId || g.tabs.some((s) => s.id === tabId)) ?? GROUPS[0];
+
 	// Deep-link support: honour ?tab=<id> on first load (e.g. from the dashboard
 	// routing card), falling back to overview for unknown values.
 	const initialTab = page.url.searchParams.get('tab');
-	let tab = $state(TABS.some((x) => x.id === initialTab) ? initialTab! : 'overview');
+	let tab = $state(initialTab && ALL_TAB_IDS.includes(initialTab) ? initialTab : 'overview');
+	let activeGroup = $derived(groupOf(tab));
 
 	let desired = $state<unknown>(null);
 	let desiredErr = $state('');
@@ -235,27 +276,64 @@
   "protocol_suffix": "_v4",
   "enabled": true
 }`;
+
+	// Structured-form schemas for the spec editor (raw JSON stays available behind
+	// an "advanced" toggle). Keys mirror the *_EXAMPLE shapes above.
+	const IFACE_FIELDS: SpecField[] = [
+		{ key: 'name', label: t('node.f.ifName'), type: 'text', placeholder: 'as4242429001', required: true, mono: true },
+		{ key: 'kind', label: t('node.f.ifKind'), type: 'select', options: ['wireguard'] },
+		{ key: 'addresses', label: t('node.f.ifAddrs'), type: 'list', placeholder: '198.18.90.2/31' },
+		{ key: 'peer_routes', label: t('node.f.ifPeerRoutes'), type: 'list', placeholder: '198.18.90.1/32' },
+		{ key: 'listen_port', label: t('node.f.ifPort'), type: 'number', placeholder: '38001' },
+		{ key: 'private_key_ref', label: t('node.f.ifKeyRef'), type: 'text', mono: true },
+		{
+			key: 'wireguard_peer',
+			label: t('node.f.ifWgPeer'),
+			type: 'group',
+			fields: [
+				{ key: 'public_key', label: t('node.f.ifWgPub'), type: 'text', mono: true },
+				{ key: 'allowed_ips', label: t('node.f.ifWgAllowed'), type: 'list', placeholder: '198.18.90.1/32' }
+			]
+		}
+	];
+	const BGP_FIELDS: SpecField[] = [
+		{ key: 'name', label: t('node.f.bgpName'), type: 'text', placeholder: 'as4242429001_v4', required: true, mono: true },
+		{ key: 'remote_asn', label: t('node.f.bgpAsn'), type: 'number', placeholder: '4242429001', required: true },
+		{ key: 'neighbor', label: t('node.f.bgpNeighbor'), type: 'text', placeholder: '198.18.90.1', required: true, mono: true },
+		{ key: 'source_address', label: t('node.f.bgpSource'), type: 'text', placeholder: '198.18.90.2', mono: true },
+		{ key: 'address_family', label: t('node.f.bgpAf'), type: 'select', options: ['ipv4', 'ipv6'] },
+		{ key: 'interface', label: t('node.f.bgpIface'), type: 'text', mono: true },
+		{ key: 'protocol_suffix', label: t('node.f.bgpSuffix'), type: 'text', placeholder: '_v4' },
+		{ key: 'enabled', label: t('node.f.bgpEnabled'), type: 'bool' }
+	];
 </script>
 
-<div class="spread" style="margin-bottom:0.5rem">
+<div class="page-head" style="margin-bottom:1rem">
 	<div>
-		<a href="/nodes" class="faint">{t('node.back')}</a>
-		<h1 class="mono" style="margin-top:0.25rem">{nodeId}</h1>
+		<a href="/nodes" class="back-link"><Icon name="arrow-left" size={13} />{t('node.back')}</a>
+		<div class="ph-title">
+			<Icon name="nodes" size={22} />
+			<h1 class="mono" style="margin:0">{nodeId}</h1>
+		</div>
+		{#if node}
+			<p class="ph-sub mono">
+				{node.site ?? '—'} · AS{node.asn} · {t('node.genShort')} {node.current_generation}
+			</p>
+		{/if}
 	</div>
 	{#if node}
-		<div class="inline">
+		<div class="ph-actions">
 			{#if health}<HealthBadge value={health} />{/if}
 			<span class="badge {node.lifecycle === 'active' ? 'ok' : 'stale'}">
 				<span class="dot"></span>{node.lifecycle}
 			</span>
-			<span class="faint mono">{t('node.genShort')} {node.current_generation}</span>
 		</div>
 	{/if}
 </div>
 
 {#if severity}
 	<div class="disc {severity}" role="alert">
-		<span class="disc-ic">{severity === 'down' ? '⛔' : '⚠'}</span>
+		<span class="disc-ic"><Icon name="alert-triangle" size={18} /></span>
 		<div class="disc-body">
 			<strong>{severity === 'down' ? t('disc.titleDown') : t('disc.titleStale')}</strong>
 			<p>{severity === 'down' ? t('disc.bodyDown') : t('disc.bodyStale')}</p>
@@ -269,32 +347,30 @@
 	<div class="card"><p class="error-text">{error}</p></div>
 {:else if node}
 	<div class="tabs">
-		{#each TABS as item (item.id)}
-			<button class="tab" class:active={tab === item.id} onclick={() => (tab = item.id)}>
-				{t(item.key)}
+		{#each GROUPS as g (g.id)}
+			<button
+				class="tab"
+				class:active={activeGroup.id === g.id}
+				onclick={() => (tab = groupContentId(g))}
+			>
+				{t(g.key)}
 			</button>
 		{/each}
 	</div>
+	{#if activeGroup.tabs.length}
+		<div class="subtabs">
+			{#each activeGroup.tabs as s (s.id)}
+				<button class="subtab" class:active={tab === s.id} onclick={() => (tab = s.id)}>
+					{t(s.key)}
+				</button>
+			{/each}
+		</div>
+	{/if}
 
 	<div class="card">
 		{#if tab === 'overview'}
 			<div class="card-head">
 				<h3>{t('node.tab.overview')}</h3>
-				<div class="inline">
-					<button class="btn primary sm" onclick={() => (showWizard = true)}
-						>⚡ {t('peer.prov.btn')}</button>
-					<button
-						class="btn sm"
-						onclick={() => notify('desired_state_updated')}
-						disabled={disconnected}
-						title={disconnected ? t('disc.pushDisabled') : ''}>{t('node.notifyUpdate')}</button>
-					<button
-						class="btn sm"
-						onclick={() => notify('snapshot_request')}
-						disabled={disconnected}
-						title={disconnected ? t('disc.pushDisabled') : ''}>{t('node.requestSnapshot')}</button>
-					<button class="btn sm" onclick={openEdit}>{t('common.edit')}</button>
-				</div>
 			</div>
 			<NodeTrends {nodeId} />
 			<NodeSelfMetrics {nodeId} />
@@ -324,7 +400,28 @@
 				</div>
 			{/if}
 
-			<div class="card-head" style="margin-top:1.5rem; border-top:1px solid var(--border); padding-top:1rem">
+			<div class="card-head section-head">
+				<h3 class="muted">{t('node.commonActions')}</h3>
+			</div>
+			<div class="inline">
+				<button class="btn primary sm" onclick={() => (showWizard = true)}>
+					<Icon name="route" size={15} />{t('peer.prov.btn')}
+				</button>
+				<button
+					class="btn sm"
+					onclick={() => notify('desired_state_updated')}
+					disabled={disconnected}
+					title={disconnected ? t('disc.pushDisabled') : ''}>{t('node.notifyUpdate')}</button>
+				<button
+					class="btn sm"
+					onclick={() => notify('snapshot_request')}
+					disabled={disconnected}
+					title={disconnected ? t('disc.pushDisabled') : ''}>
+					<Icon name="refresh" size={14} />{t('node.requestSnapshot')}</button>
+				<button class="btn sm" onclick={openEdit}><Icon name="edit" size={14} />{t('common.edit')}</button>
+			</div>
+
+			<div class="card-head section-head">
 				<h3 class="muted">{t('node.dangerZone')}</h3>
 			</div>
 			<div class="inline">
@@ -343,6 +440,7 @@
 				singular={t('node.tab.interfaces')}
 				fields={{ enabled: true, sortOrder: true, peering: true }}
 				example={IFACE_EXAMPLE}
+				formFields={IFACE_FIELDS}
 				{peerings}
 				load={() => api.listInterfaces(nodeId)}
 				create={(b) => api.createInterface(nodeId, b)}
@@ -355,6 +453,7 @@
 				singular={t('node.tab.bgp')}
 				fields={{ sortOrder: true, peering: true }}
 				example={BGP_EXAMPLE}
+				formFields={BGP_FIELDS}
 				{peerings}
 				load={() => api.listSessions(nodeId)}
 				create={(b) => api.createSession(nodeId, b)}
@@ -376,7 +475,9 @@
 		{:else if tab === 'desired'}
 			<div class="card-head">
 				<h3>{t('node.currentDesired')}</h3>
-				<button class="btn sm" onclick={loadDesired}>↻</button>
+				<button class="btn sm icon" onclick={loadDesired} aria-label={t('common.refresh')}>
+					<Icon name="refresh" size={15} />
+				</button>
 			</div>
 			{#if desiredErr}
 				<p class="error-text">{desiredErr}</p>
@@ -457,11 +558,27 @@
 		font-size: 0.85rem;
 		line-height: 1.5;
 	}
+	.back-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		color: var(--text-faint);
+		font-size: 0.8rem;
+		margin-bottom: 0.3rem;
+	}
+	.back-link:hover {
+		color: var(--text-dim);
+		text-decoration: none;
+	}
+	.disc-ic {
+		display: flex;
+		align-items: center;
+	}
 	.tabs {
 		display: flex;
 		gap: 2px;
 		flex-wrap: wrap;
-		margin-bottom: 1rem;
+		margin-bottom: 0.75rem;
 		border-bottom: 1px solid var(--border);
 	}
 	.tab {
@@ -481,6 +598,38 @@
 		color: var(--text);
 		border-bottom-color: var(--accent);
 		font-weight: 500;
+	}
+	/* secondary nav: pill row under the active group's main tab */
+	.subtabs {
+		display: flex;
+		gap: 0.3rem;
+		flex-wrap: wrap;
+		margin-bottom: 1rem;
+	}
+	.subtab {
+		background: none;
+		border: 1px solid transparent;
+		border-radius: var(--radius-sm);
+		color: var(--text-dim);
+		padding: 0.35rem 0.75rem;
+		cursor: pointer;
+		font-size: 0.82rem;
+		width: auto;
+	}
+	.subtab:hover {
+		color: var(--text);
+		background: var(--bg-elev-2);
+	}
+	.subtab.active {
+		color: var(--accent);
+		background: var(--accent-soft);
+		font-weight: 500;
+	}
+	/* shared section divider inside the overview (common actions / danger zone) */
+	.section-head {
+		margin-top: 1.5rem;
+		border-top: 1px solid var(--border);
+		padding-top: 1rem;
 	}
 	.grid {
 		display: grid;

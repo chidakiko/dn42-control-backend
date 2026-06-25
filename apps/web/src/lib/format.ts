@@ -18,6 +18,12 @@ function parse(value: string | null | undefined): Date | null {
 	return isNaN(d.getTime()) ? null : d;
 }
 
+// Exposed for charts that need the parsed Date (axis ticks / tooltips) rather
+// than a preformatted string. Applies the same naive-UTC normalisation.
+export function parseTs(value: string | null | undefined): Date | null {
+	return parse(value);
+}
+
 export function fmtTime(value: string | null | undefined): string {
 	const d = parse(value);
 	if (!d) return value ? value : '—';

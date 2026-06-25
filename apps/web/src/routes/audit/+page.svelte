@@ -3,6 +3,8 @@
 	import { api, errorMessage } from '$lib/api';
 	import { fmtTime } from '$lib/format';
 	import { t } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import type { AuditEntry } from '$lib/types';
 	import Modal from '$lib/components/Modal.svelte';
 	import JsonView from '$lib/components/JsonView.svelte';
@@ -42,16 +44,24 @@
 	}
 </script>
 
-<div class="spread" style="margin-bottom:1.25rem">
-	<h1>{t('audit.title')}</h1>
-	<div class="inline">
+<div class="page-head">
+	<div>
+		<div class="ph-title">
+			<Icon name="audit" size={22} />
+			<h1>{t('audit.title')}</h1>
+		</div>
+		<p class="ph-sub">{t('audit.subtitle')}</p>
+	</div>
+	<div class="ph-actions">
 		<select bind:value={limit} onchange={load} style="width:auto">
 			<option value={50}>{t('audit.last', 50)}</option>
 			<option value={100}>{t('audit.last', 100)}</option>
 			<option value={250}>{t('audit.last', 250)}</option>
 			<option value={1000}>{t('audit.last', 1000)}</option>
 		</select>
-		<button class="btn sm" onclick={load} disabled={loading}>↻ {t('common.refresh')}</button>
+		<button class="btn sm" onclick={load} disabled={loading}>
+			<Icon name="refresh" size={15} />{t('common.refresh')}
+		</button>
 	</div>
 </div>
 
@@ -64,7 +74,7 @@
 {:else}
 	<div class="card" style="padding:0">
 		{#if items.length === 0}
-			<div class="empty">{t('audit.empty')}</div>
+			<EmptyState icon="audit" title={t('audit.empty')} hint={t('audit.subtitle')} />
 		{:else}
 			<table>
 				<thead>

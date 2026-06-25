@@ -7,6 +7,7 @@
 	import { api, errorMessage } from '$lib/api';
 	import { toast } from '$lib/toast.svelte';
 	import { t } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { nodeId }: { nodeId: string } = $props();
 
@@ -151,7 +152,7 @@
 			<tbody>
 				{#each rules as rule, i (i)}
 					<tr>
-						<td><input class="mono" bind:value={rule.prefix} placeholder="172.20.0.160/27" /></td>
+						<td><input class="mono" bind:value={rule.prefix} placeholder="172.20.62.160/27" /></td>
 						<td><input type="number" min="0" bind:value={rule.local_pref} style="max-width:7rem" /></td>
 						<td class="actions">
 							<button class="btn ghost sm danger" onclick={() => removeRule(i)}>{t('common.delete')}</button>
@@ -165,7 +166,7 @@
 	<!-- 会话级 link_latency -->
 	<div class="card-head" style="margin-top:1.6rem">
 		<h3>{t('rt.sess.title')}</h3>
-		<button class="btn sm" onclick={load} disabled={loading}>↻</button>
+		<button class="btn sm icon" onclick={load} disabled={loading} aria-label={t('common.refresh')}><Icon name="refresh" size={15} /></button>
 	</div>
 	<p class="faint hint">{t('rt.sess.hint')}</p>
 	{#if sessRows.length === 0}

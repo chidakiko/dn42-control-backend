@@ -13,7 +13,8 @@
 	} from '$lib/types';
 	import Donut from './../charts/Donut.svelte';
 	import BarChart from './../charts/BarChart.svelte';
-	import Sparkline from './../charts/Sparkline.svelte';
+	import TrendChart from './../charts/TrendChart.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import Modal from './../Modal.svelte';
 
 	let { nodeId }: { nodeId: string } = $props();
@@ -234,13 +235,14 @@
 			}));
 	});
 
+	// 路由表规模趋势(Radar 风):单条总路由折线 + 渐变面积,Y 轴紧贴数据(波动可见),
+	// X 轴真实时间戳。v4/v6 占比由上方甜甜圈呈现,这里专注总规模随时间的走势。
 	let routeCountSeries = $derived(timeline ? timeline.events.map((e) => e.route_count) : []);
-	// 趋势图的简单坐标轴:Y 轴 min/max、X 轴起止时间。
-	let rcMax = $derived(routeCountSeries.length ? Math.max(...routeCountSeries) : 0);
-	let rcMin = $derived(routeCountSeries.length ? Math.min(...routeCountSeries) : 0);
-	let tlStart = $derived(timeline?.events.length ? timeline.events[0].captured_at : null);
-	let tlEnd = $derived(
-		timeline?.events.length ? timeline.events[timeline.events.length - 1].captured_at : null
+	let timelineStamps = $derived(timeline ? timeline.events.map((e) => e.captured_at) : []);
+	let timelineSeries = $derived(
+		timeline
+			? [{ label: t('routing.total'), color: 'var(--c-accent)', fill: true, values: routeCountSeries }]
+			: []
 	);
 
 	let churnGroups = $derived(
@@ -289,7 +291,7 @@
 
 <div class="card-head">
 	<h3>{t('routing.title')}</h3>
-	<button class="btn sm" onclick={loadHead} disabled={loading}>↻</button>
+	<button class="btn sm icon" onclick={loadHead} disabled={loading} aria-label={t('common.refresh')}><Icon name="refresh" size={15} /></button>
 </div>
 
 {#if loading && !summary}
@@ -371,23 +373,28 @@
 		</div>
 	</div>
 
-	<!-- timeline -->
+	<!-- timeline (Radar 风趋势图) -->
 	{#if routeCountSeries.length > 1}
-		<div class="chart-block">
-			<span class="faint">{t('routing.timeline')}</span>
-			<div class="axed">
-				<div class="yax">
-					<span>{rcMax}</span>
-					<span>{rcMin}</span>
+		<div class="chart-block trend-block">
+			<div class="trend-head">
+				<div>
+					<h4>{t('routing.timeline')}</h4>
+					<span class="faint sub">{t('routing.timelineSub')}</span>
 				</div>
-				<div class="plot">
-					<Sparkline values={routeCountSeries} width={600} height={110} color="var(--c-accent)" />
-				</div>
+				{#if timelineSeries.length > 1}
+					<div class="trend-legend">
+						{#each timelineSeries as s (s.label)}
+							<span><span class="ld" style="background:{s.color}"></span>{s.label}</span>
+						{/each}
+					</div>
+				{/if}
 			</div>
-			<div class="xax">
-				<span>{fmtTime(tlStart)}</span>
-				<span>{fmtTime(tlEnd)}</span>
-			</div>
+			<TrendChart
+				series={timelineSeries}
+				timestamps={timelineStamps}
+				height={200}
+				format={(v) => Math.round(v).toLocaleString()}
+			/>
 		</div>
 	{/if}
 	{#if hasChurn}
@@ -740,40 +747,40 @@
 		flex-direction: column;
 		gap: 0.4rem;
 	}
-	/* 趋势图的简单坐标轴:左侧 Y(min/max)+底部 X(起止时间),L 形轴线 */
-	.axed {
-		display: flex;
-		align-items: stretch;
+	/* 趋势图(Radar 风):标题/副标题 + 图例,图表自身负责坐标轴 */
+	.trend-block {
+		gap: 0.2rem;
 	}
-	.yax {
+	.trend-head {
 		display: flex;
-		flex-direction: column;
+		align-items: flex-start;
 		justify-content: space-between;
-		text-align: right;
-		padding: 1px 6px 1px 0;
-		min-width: 3rem;
-		font-size: 0.68rem;
-		color: var(--text-faint);
-		font-variant-numeric: tabular-nums;
+		gap: 1rem;
+		flex-wrap: wrap;
 	}
-	.plot {
-		flex: 1;
-		min-width: 0;
-		border-left: 1px solid var(--border-strong);
-		border-bottom: 1px solid var(--border-strong);
+	.trend-head h4 {
+		margin: 0;
 	}
-	.plot :global(svg) {
-		display: block;
-		width: 100%;
-		height: 110px;
+	.trend-head .sub {
+		font-size: 0.76rem;
 	}
-	.xax {
+	.trend-legend {
 		display: flex;
-		justify-content: space-between;
-		margin-left: 3rem;
-		font-size: 0.68rem;
-		color: var(--text-faint);
-		font-variant-numeric: tabular-nums;
+		flex-wrap: wrap;
+		gap: 0.9rem;
+		font-size: 0.78rem;
+		color: var(--text-dim);
+	}
+	.trend-legend span {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+	.ld {
+		width: 14px;
+		height: 3px;
+		border-radius: 2px;
+		display: inline-block;
 	}
 	h4 {
 		margin: 0 0 0.5rem;

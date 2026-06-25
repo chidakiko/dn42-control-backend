@@ -4,6 +4,7 @@
 	import { toast } from '$lib/toast.svelte';
 	import { fmtTime } from '$lib/format';
 	import { t } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import type { AgentTokenOut } from '$lib/types';
 	import Modal from './../Modal.svelte';
 	import SecretReveal from './../SecretReveal.svelte';
@@ -86,7 +87,7 @@
 <div class="card-head">
 	<h3>{t('tok.title')} <span class="faint">({items.length})</span></h3>
 	<div class="inline">
-		<button class="btn sm" onclick={refresh} disabled={loading}>↻</button>
+		<button class="btn sm icon" onclick={refresh} disabled={loading} aria-label={t('common.refresh')}><Icon name="refresh" size={15} /></button>
 		<button class="btn primary sm" onclick={() => (showIssue = true)}>+ {t('tok.issue')}</button>
 	</div>
 </div>

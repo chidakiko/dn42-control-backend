@@ -3,6 +3,7 @@
 	import { api, errorMessage } from '$lib/api';
 	import { fmtTime } from '$lib/format';
 	import { t, locale } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import type { StatusEvent } from '$lib/types';
 	import HealthBadge from './../HealthBadge.svelte';
 	import Modal from './../Modal.svelte';
@@ -131,7 +132,7 @@
 			<option value="report">report</option>
 			<option value="apply">apply</option>
 		</select>
-		<button class="btn sm" onclick={refresh} disabled={loading}>↻</button>
+		<button class="btn sm icon" onclick={refresh} disabled={loading} aria-label={t('common.refresh')}><Icon name="refresh" size={15} /></button>
 	</div>
 </div>
 

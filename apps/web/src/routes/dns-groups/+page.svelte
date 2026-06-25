@@ -6,6 +6,8 @@
 	import type { DnsGroupOut, DnsGroupZoneOut } from '$lib/types';
 	import Modal from '$lib/components/Modal.svelte';
 	import JsonEditor from '$lib/components/JsonEditor.svelte';
+	import Icon from '$lib/components/Icon.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import DnsRecordsPanel from '$lib/components/node/DnsRecordsPanel.svelte';
 	import { autoRefresh } from '$lib/refresh.svelte';
 
@@ -202,14 +204,21 @@
 	}
 </script>
 
-<div class="spread" style="margin-bottom:1.25rem">
-	<h1>{t('dns.title')}</h1>
-	<div class="inline">
-		<button class="btn sm" onclick={loadGroups} disabled={loading}>↻ {t('common.refresh')}</button>
+<div class="page-head">
+	<div>
+		<div class="ph-title">
+			<Icon name="dns" size={22} />
+			<h1>{t('dns.title')}</h1>
+		</div>
+		<p class="ph-sub">{t('dns.subtitle')}</p>
+	</div>
+	<div class="ph-actions">
+		<button class="btn sm" onclick={loadGroups} disabled={loading}>
+			<Icon name="refresh" size={15} />{t('common.refresh')}
+		</button>
 		<button class="btn sm primary" onclick={openGroupCreate}>+ {t('dns.new')}</button>
 	</div>
 </div>
-<p class="faint" style="font-size:0.8rem; margin-top:-0.75rem">{t('dns.subtitle')}</p>
 
 {#if loading && groups.length === 0}
 	<div class="empty">{t('common.loading')}</div>
@@ -218,7 +227,13 @@
 {:else}
 	<div class="card" style="padding:0">
 		{#if groups.length === 0}
-			<div class="empty">{t('dns.empty')}</div>
+			<EmptyState
+			icon="dns"
+			title={t('dns.empty')}
+			hint={t('dns.subtitle')}
+			actionLabel={'+ ' + t('dns.new')}
+			onaction={openGroupCreate}
+		/>
 		{:else}
 			<table>
 				<thead>

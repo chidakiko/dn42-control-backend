@@ -4,6 +4,8 @@
 	import { toast } from '$lib/toast.svelte';
 	import { fmtTime } from '$lib/format';
 	import { t } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import type { Registration } from '$lib/types';
 	import Modal from '$lib/components/Modal.svelte';
 	import JsonView from '$lib/components/JsonView.svelte';
@@ -53,16 +55,24 @@
 	}
 </script>
 
-<div class="spread" style="margin-bottom:1.25rem">
-	<h1>{t('reg.title')}</h1>
-	<div class="inline">
+<div class="page-head">
+	<div>
+		<div class="ph-title">
+			<Icon name="registrations" size={22} />
+			<h1>{t('reg.title')}</h1>
+		</div>
+		<p class="ph-sub">{t('reg.subtitle')}</p>
+	</div>
+	<div class="ph-actions">
 		<select bind:value={filter} onchange={load} style="width:auto">
 			<option value="">{t('reg.all')}</option>
 			<option value="pending">{t('reg.pending')}</option>
 			<option value="approved">{t('reg.approved')}</option>
 			<option value="rejected">{t('reg.rejected')}</option>
 		</select>
-		<button class="btn sm" onclick={load} disabled={loading}>↻ {t('common.refresh')}</button>
+		<button class="btn sm" onclick={load} disabled={loading}>
+			<Icon name="refresh" size={15} />{t('common.refresh')}
+		</button>
 	</div>
 </div>
 
@@ -75,7 +85,7 @@
 {:else}
 	<div class="card" style="padding:0">
 		{#if items.length === 0}
-			<div class="empty">{t('reg.empty')}</div>
+			<EmptyState icon="registrations" title={t('reg.empty')} hint={t('reg.subtitle')} />
 		{:else}
 			<table>
 				<thead>

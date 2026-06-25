@@ -7,6 +7,8 @@
 	import { t } from '$lib/i18n.svelte';
 	import Sparkline from '../charts/Sparkline.svelte';
 	import HealthBadge from '../HealthBadge.svelte';
+	import Skeleton from '../Skeleton.svelte';
+	import { fade } from 'svelte/transition';
 	import type { StatusEvent } from '$lib/types';
 
 	let { nodeId }: { nodeId: string } = $props();
@@ -53,8 +55,18 @@
 	let hasData = $derived(reports.length > 0 || applies.length > 0);
 </script>
 
-{#if loaded && hasData}
+{#if !loaded}
 	<div class="trends">
+		{#each Array(3) as _, i (i)}
+			<div class="mini">
+				<Skeleton w="3rem" h="0.66rem" />
+				<Skeleton w="3.5rem" h="1.5rem" />
+				{#if i < 2}<Skeleton h="30px" />{/if}
+			</div>
+		{/each}
+	</div>
+{:else if hasData}
+	<div class="trends" in:fade={{ duration: 150 }}>
 		<div class="mini">
 			<span class="lbl">{t('trends.drift')}</span>
 			<div class="row1">

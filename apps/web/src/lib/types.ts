@@ -59,6 +59,24 @@ export interface FleetHealth {
 	nodes: NodeHealthRow[];
 }
 
+// Aggregate dashboard payload: health rows (+ capabilities) + the physical WG mesh
+// links, in one call (replaces N per-node internal-topology fetches).
+export interface FleetOverviewNode extends NodeHealthRow {
+	capabilities: string[];
+}
+export interface FleetLink {
+	a: string;
+	b: string;
+	a_iface: string | null;
+	b_iface: string | null;
+	cost: number | null;
+}
+export interface FleetOverview {
+	summary: Partial<Record<NodeHealthValue, number>>;
+	nodes: FleetOverviewNode[];
+	links: FleetLink[];
+}
+
 export interface NodeHealthDetail extends NodeHealthRow {
 	last_snapshot: Record<string, unknown> | null;
 	last_report: Record<string, unknown> | null;

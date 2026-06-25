@@ -1,34 +1,77 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { api, ApiError, errorMessage } from '$lib/api';
-	import type { FleetHealth, NodeHealthValue } from '$lib/types';
+	import type { FleetOverview } from '$lib/types';
 	import HealthBadge from '$lib/components/HealthBadge.svelte';
 	import FleetRouting from '$lib/components/FleetRouting.svelte';
-	import Donut from '$lib/components/charts/Donut.svelte';
-	import MiniBar from '$lib/components/charts/MiniBar.svelte';
 	import { relTime } from '$lib/format';
 	import { toast } from '$lib/toast.svelte';
 	import { autoRefresh } from '$lib/refresh.svelte';
 	import { t } from '$lib/i18n.svelte';
+	import Icon, { type IconName } from '$lib/components/Icon.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import FleetTopology from '$lib/components/FleetTopology.svelte';
+	import TrendChart from '$lib/components/charts/TrendChart.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
+	import { fade } from 'svelte/transition';
 
-	let data = $state<FleetHealth | null>(null);
+	// --- demo traffic chart -------------------------------------------------
+	// Sample (fake) traffic so the dashboard mirrors Cloudflare Radar's traffic
+	// trend: two smooth solid lines (total / HTTP) plus dashed "previous period"
+	// overlays, on a diurnal wave. Generated once at mount; deterministic noise
+	// (no Math.random) so it doesn't jitter on refresh polls.
+	const TRAFFIC_TOTAL = '#2f6fed';
+	const TRAFFIC_HTTP = '#38bdf8';
+	const fmtTB = (v: number) => `${v.toFixed(1)} TB`;
+
+	function genTraffic() {
+		const N = 84; // 7 days at 2h resolution
+		const stepMs = 2 * 3600 * 1000;
+		const start = Date.now() - (N - 1) * stepMs;
+		const hash = (i: number) => {
+			const x = Math.sin(i * 12.9898) * 43758.5453;
+			return x - Math.floor(x); // 0..1
+		};
+		const stamps: string[] = [];
+		const total: number[] = [];
+		const http: number[] = [];
+		const totalPrev: number[] = [];
+		const httpPrev: number[] = [];
+		for (let i = 0; i < N; i++) {
+			const ts = start + i * stepMs;
+			const d = new Date(ts);
+			stamps.push(d.toISOString());
+			const hod = d.getUTCHours() + d.getUTCMinutes() / 60;
+			const diur = Math.sin(((hod - 6) / 24) * 2 * Math.PI); // -1..1, peak afternoon UTC
+			const week = Math.sin((i / N) * Math.PI); // gentle hump across the window
+			const tot = 17 + 6 * diur + 1.5 * week + (hash(i) - 0.5) * 1.6;
+			total.push(tot);
+			http.push(tot * 0.66 + (hash(i + 100) - 0.5) * 1.0);
+			const totP = 16 + 5.6 * diur + 1.2 * week + (hash(i + 200) - 0.5) * 1.6;
+			totalPrev.push(totP);
+			httpPrev.push(totP * 0.64 + (hash(i + 300) - 0.5) * 1.0);
+		}
+		return { stamps, total, http, totalPrev, httpPrev };
+	}
+	const traffic = genTraffic();
+	let trafficSeries = $derived([
+		{ label: t('dash.traffic.total'), color: TRAFFIC_TOTAL, values: traffic.total },
+		{ label: t('dash.traffic.http'), color: TRAFFIC_HTTP, values: traffic.http },
+		{ label: `${t('dash.traffic.total')} · ${t('dash.traffic.prev')}`, color: TRAFFIC_TOTAL, values: traffic.totalPrev, dash: true },
+		{ label: `${t('dash.traffic.http')} · ${t('dash.traffic.prev')}`, color: TRAFFIC_HTTP, values: traffic.httpPrev, dash: true }
+	]);
+
+	let data = $state<FleetOverview | null>(null);
 	let loading = $state(true);
 	let error = $state('');
-
-	const ORDER: NodeHealthValue[] = ['ok', 'stale', 'degraded', 'down', 'unknown'];
-	const COLOR: Record<NodeHealthValue, string> = {
-		ok: 'var(--c-ok)',
-		stale: 'var(--c-warn)',
-		degraded: 'var(--c-bad)',
-		down: 'var(--c-down)',
-		unknown: 'var(--c-unknown)'
-	};
+	// Node ids visible in the map's current region view; null = show all.
+	let visibleIds = $state<string[] | null>(null);
 
 	async function load() {
 		if (!data) loading = true; // spinner only on first load; polls update silently
 		error = '';
 		try {
-			data = await api.fleetHealth();
+			data = await api.fleetOverview();
 		} catch (err) {
 			error = errorMessage(err);
 		} finally {
@@ -56,68 +99,71 @@
 	}
 
 	let total = $derived(data ? data.nodes.length : 0);
-	let segments = $derived(
-		data
-			? ORDER.map((h) => ({ label: t(`health.${h}`), value: data!.summary[h] ?? 0, color: COLOR[h] }))
-			: []
-	);
-	let maxDrift = $derived(data ? Math.max(1, ...data.nodes.map((n) => n.drift_count)) : 1);
+	let okCount = $derived(data ? (data.summary.ok ?? 0) : 0);
 
-	let filter = $state<NodeHealthValue | null>(null);
-	let shown = $derived(
-		data ? (filter ? data.nodes.filter((n) => n.health === filter) : data.nodes) : []
+	// Node capabilities (from runtime service roles), shown as compact icons with a
+	// hover label. Notable roles only; router-netns / debug-shell (every node) hidden.
+	const CAP_META: Record<string, { label: string; icon: IconName }> = {
+		dns: { label: 'DNS', icon: 'dns' },
+		'rpki-cache': { label: 'RPKI', icon: 'shield-check' },
+		'bird-router': { label: 'BIRD', icon: 'bird' },
+		'wg-gateway': { label: 'WireGuard', icon: 'wireguard' }
+	};
+	const CAP_ORDER = ['dns', 'rpki-cache', 'bird-router', 'wg-gateway'];
+	function capIcons(caps: string[] | undefined): { key: string; label: string; icon: IconName }[] {
+		const set = new Set(caps ?? []);
+		return CAP_ORDER.filter((c) => set.has(c)).map((c) => ({ key: c, ...CAP_META[c] }));
+	}
+	let shownNodes = $derived(
+		data ? (visibleIds ? data.nodes.filter((n) => visibleIds!.includes(n.node_id)) : data.nodes) : []
 	);
-	function toggle(h: NodeHealthValue) {
-		filter = filter === h ? null : h;
-	}
-	function pct(v: number): string {
-		return total > 0 ? `${Math.round((v / total) * 100)}%` : '0%';
-	}
 </script>
 
-<div class="spread" style="margin-bottom:1.25rem">
-	<h1>{t('dash.title')}</h1>
-	<button class="btn sm" onclick={load} disabled={loading}>↻ {t('common.refresh')}</button>
+<div class="page-head">
+	<div>
+		<div class="ph-title">
+			<Icon name="dashboard" size={22} />
+			<h1>{t('dash.title')}</h1>
+		</div>
+		<p class="ph-sub">{t('dash.subtitle')}</p>
+	</div>
+	<div class="ph-actions">
+		<button class="btn sm" onclick={load} disabled={loading}>
+			<Icon name="refresh" size={15} />{t('common.refresh')}
+		</button>
+	</div>
 </div>
 
 {#if loading && !data}
-	<div class="empty">{t('common.loading')}</div>
+	<div class="card"><Skeleton h="300px" /></div>
+	<div class="card" style="margin-top:1.25rem">
+		<div class="stack" style="gap:0.85rem">
+			{#each Array(6) as _, i (i)}<Skeleton h="1.3rem" />{/each}
+		</div>
+	</div>
 {:else if error}
 	<div class="card"><p class="error-text">{error}</p></div>
 {:else if data}
-	<div class="card health-card">
-		<div class="donut-wrap">
-			<Donut {segments} size={150} thickness={22} centerValue={total} centerLabel={t('nav.nodes')} />
+	{#if data.nodes.length > 0}
+		<div class="card doc-topology" in:fade={{ duration: 150 }}>
+			<div class="card-head">
+				<h2>{t('dash.topology')}</h2>
+				<span class="kpi"><strong>{okCount}/{total}</strong> {t('health.ok')}</span>
+			</div>
+			<FleetTopology nodes={data.nodes} links={data.links} onview={(ids) => (visibleIds = ids)} />
 		</div>
-		<div class="legend">
-			{#each ORDER as h (h)}
-				<button
-					class="leg"
-					class:active={filter === h}
-					class:dim={filter !== null && filter !== h}
-					onclick={() => toggle(h)}
-				>
-					<span class="sw" style="background:{COLOR[h]}"></span>
-					<span class="leg-label">{t(`health.${h}`)}</span>
-					<span class="leg-num">{data.summary[h] ?? 0}</span>
-					<span class="leg-pct faint">{pct(data.summary[h] ?? 0)}</span>
-				</button>
-			{/each}
-			{#if filter}
-				<button class="leg clear" onclick={() => (filter = null)}>✕ {t('common.total')}: {total}</button>
-			{/if}
-		</div>
-	</div>
+	{/if}
 
 	<div class="card" style="margin-top:1.25rem; padding:0">
 		{#if data.nodes.length === 0}
-			<div class="empty">{t('dash.empty')}</div>
+			<EmptyState icon="nodes" title={t('dash.empty')} hint={t('dash.subtitle')} />
 		{:else}
 			<table>
 				<thead>
 					<tr>
 						<th>{t('dash.col.node')}</th>
 						<th>{t('dash.col.health')}</th>
+						<th>{t('dash.col.caps')}</th>
 						<th>{t('dash.col.genPair')}</th>
 						<th>{t('dash.col.report')}</th>
 						<th>{t('dash.col.apply')}</th>
@@ -127,11 +173,22 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each shown as n (n.node_id)}
+					{#each shownNodes as n (n.node_id)}
 						{@const outdated = n.health === 'down' || n.health === 'stale'}
 						<tr>
 							<td><a href="/nodes/{n.node_id}" class="mono">{n.node_id}</a></td>
 							<td><HealthBadge value={n.health} /></td>
+							<td>
+								<div class="caps">
+									{#each capIcons(n.capabilities) as c (c.key)}
+										<span class="cap" title={c.label} aria-label={c.label}>
+											<Icon name={c.icon} size={16} />
+										</span>
+									{:else}
+										<span class="faint">—</span>
+									{/each}
+								</div>
+							</td>
 							<td class="mono genpair">
 								{n.desired_generation ?? '—'}<span class="sep">/</span><span
 									class:mismatch={!outdated &&
@@ -148,6 +205,7 @@
 									value={n.last_report_status}
 									muted={outdated}
 									hint={outdated ? t('dash.lastKnown') : ''}
+									compact
 								/>
 							</td>
 							<td>
@@ -155,19 +213,25 @@
 									value={n.last_apply_status}
 									muted={outdated}
 									hint={outdated ? t('dash.lastKnown') : ''}
+									compact
 								/>
 							</td>
 							<td>
-								<MiniBar
-									value={n.drift_count}
-									max={maxDrift}
-									color={n.drift_count > 0 ? 'var(--c-bad)' : 'var(--c-unknown)'}
-								/>
+								{#if n.drift_count > 0}
+									<span class="mono drift-num">{n.drift_count}</span>
+								{:else}
+									<span class="faint">—</span>
+								{/if}
 							</td>
 							<td class="faint">{relTime(n.last_snapshot_at)}</td>
 							<td class="actions">
-								<button class="btn sm ghost" onclick={() => notify(n.node_id)}>
-									{t('dash.requestSnapshot')}
+								<button
+									class="btn sm ghost icon"
+									onclick={() => notify(n.node_id)}
+									title={t('dash.requestSnapshot')}
+									aria-label={t('dash.requestSnapshot')}
+								>
+									<Icon name="refresh" size={15} />
 								</button>
 							</td>
 						</tr>
@@ -177,77 +241,86 @@
 		{/if}
 	</div>
 
-	<div style="margin-top:1.75rem">
+	<div class="doc-routing" style="margin-top:1.75rem">
 		<FleetRouting />
+	</div>
+
+	<div class="card doc-traffic" style="margin-top:1.25rem" in:fade={{ duration: 150 }}>
+		<div class="card-head trend-head">
+			<div>
+				<div class="ph-title">
+					<Icon name="activity" size={20} />
+					<h2 style="margin:0; font-size:1.15rem">{t('dash.traffic')}</h2>
+				</div>
+				<p class="ph-sub">{t('dash.trafficSub')}</p>
+			</div>
+			<div class="trend-legend">
+				<span><span class="ld" style="background:{TRAFFIC_TOTAL}"></span>{t('dash.traffic.total')}</span>
+				<span><span class="ld" style="background:{TRAFFIC_HTTP}"></span>{t('dash.traffic.http')}</span>
+				<span><span class="ld dash"></span>{t('dash.traffic.prev')}</span>
+			</div>
+		</div>
+		<TrendChart series={trafficSeries} timestamps={traffic.stamps} height={240} zeroBased format={fmtTB} />
 	</div>
 {/if}
 
 <style>
-	.health-card {
+	.kpi {
+		font-size: 0.85rem;
+		color: var(--text-dim);
+	}
+	.trend-head {
+		align-items: flex-start;
+	}
+	.trend-head .ph-sub {
+		margin: 0.15rem 0 0;
+	}
+	.trend-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.9rem;
+		font-size: 0.78rem;
+		color: var(--text-dim);
+	}
+	.trend-legend span {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+	.trend-legend .ld {
+		width: 16px;
+		height: 3px;
+		border-radius: 2px;
+		display: inline-block;
+	}
+	.trend-legend .ld.dash {
+		height: 0;
+		border-top: 2px dashed var(--text-faint);
+		border-radius: 0;
+	}
+	.kpi strong {
+		font-variant-numeric: tabular-nums;
+		font-size: 1.05rem;
+		color: var(--ok);
+		margin-right: 0.15rem;
+	}
+	.caps {
 		display: flex;
 		align-items: center;
-		gap: 2.5rem;
-		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
-	.donut-wrap {
-		flex: none;
-	}
-	.legend {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 0.25rem;
-		flex: 1;
-		min-width: 220px;
-		max-width: 360px;
-	}
-	.leg {
-		display: grid;
-		grid-template-columns: auto 1fr auto auto;
-		align-items: center;
-		gap: 0.65rem;
-		padding: 0.4rem 0.6rem;
-		background: transparent;
-		border: 1px solid transparent;
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-		font: inherit;
-		color: var(--text);
-		text-align: left;
-		transition: background 0.12s, opacity 0.12s, border-color 0.12s;
-	}
-	.leg:hover {
-		background: var(--bg-elev-2);
-	}
-	.leg.active {
-		border-color: var(--accent);
-		background: var(--accent-soft);
-	}
-	.leg.dim {
-		opacity: 0.45;
-	}
-	.sw {
-		width: 11px;
-		height: 11px;
-		border-radius: 3px;
-	}
-	.leg-label {
-		font-weight: 500;
-	}
-	.leg-num {
-		font-variant-numeric: tabular-nums;
-		font-weight: 700;
-		font-size: 1.05rem;
-	}
-	.leg-pct {
-		font-size: 0.78rem;
-		min-width: 2.6em;
-		text-align: right;
-	}
-	.leg.clear {
-		grid-template-columns: 1fr;
+	.cap {
+		display: inline-flex;
 		color: var(--text-dim);
-		font-size: 0.8rem;
-		margin-top: 0.2rem;
+		cursor: default;
+	}
+	.cap:hover {
+		color: var(--accent);
+	}
+	.drift-num {
+		color: var(--bad);
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
 	}
 	.genpair .sep {
 		color: var(--text-faint);

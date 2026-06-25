@@ -5,8 +5,12 @@
 	import { toast } from '$lib/toast.svelte';
 	import { fmtTime } from '$lib/format';
 	import { t } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import JsonEditor from '$lib/components/JsonEditor.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
+	import { fade } from 'svelte/transition';
 
 	let nodes = $state<NodeOut[]>([]);
 	let loading = $state(true);
@@ -101,22 +105,40 @@
 	}
 </script>
 
-<div class="spread" style="margin-bottom:1.25rem">
-	<h1>{t('nodes.title')}</h1>
-	<div class="inline">
-		<button class="btn sm" onclick={load} disabled={loading}>↻ {t('common.refresh')}</button>
+<div class="page-head">
+	<div>
+		<div class="ph-title">
+			<Icon name="nodes" size={22} />
+			<h1>{t('nodes.title')}</h1>
+		</div>
+		<p class="ph-sub">{t('nodes.subtitle')}</p>
+	</div>
+	<div class="ph-actions">
+		<button class="btn sm" onclick={load} disabled={loading}>
+			<Icon name="refresh" size={15} />{t('common.refresh')}
+		</button>
 		<button class="btn primary sm" onclick={() => (showCreate = true)}>+ {t('nodes.new')}</button>
 	</div>
 </div>
 
 {#if loading && nodes.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<div class="card">
+		<div class="stack" style="gap:0.9rem">
+			{#each Array(7) as _, i (i)}<Skeleton h="1.4rem" />{/each}
+		</div>
+	</div>
 {:else if error}
 	<div class="card"><p class="error-text">{error}</p></div>
 {:else}
-	<div class="card" style="padding:0">
+	<div class="card" style="padding:0" in:fade={{ duration: 150 }}>
 		{#if nodes.length === 0}
-			<div class="empty">{t('nodes.empty')}</div>
+			<EmptyState
+				icon="nodes"
+				title={t('nodes.empty')}
+				hint={t('nodes.subtitle')}
+				actionLabel={'+ ' + t('nodes.new')}
+				onaction={() => (showCreate = true)}
+			/>
 		{:else}
 			<table>
 				<thead>

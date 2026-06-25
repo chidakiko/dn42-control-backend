@@ -6,6 +6,7 @@
 	import { untrack } from 'svelte';
 	import { api, errorMessage } from '$lib/api';
 	import { t } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import { fmtTime } from '$lib/format';
 	import { autoRefresh } from '$lib/refresh.svelte';
 	import type { InternalTopologyView } from '$lib/types';
@@ -42,7 +43,7 @@
 
 <div class="card-head">
 	<h3>{t('internal.title')}</h3>
-	<button class="btn sm" onclick={load} disabled={loading}>↻</button>
+	<button class="btn sm icon" onclick={load} disabled={loading} aria-label={t('common.refresh')}><Icon name="refresh" size={15} /></button>
 </div>
 
 {#if loading && !data}

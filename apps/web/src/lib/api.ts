@@ -15,6 +15,7 @@ import type {
 	EnrollmentTokenCreated,
 	EnrollmentTokenOut,
 	FleetHealth,
+	FleetOverview,
 	FleetRouting,
 	GenerationDetailOut,
 	GenerationDiffOut,
@@ -133,6 +134,7 @@ export const api = {
 
 	// --- Health / fleet ---
 	fleetHealth: () => request<FleetHealth>('GET', '/api/v1/admin/health'),
+	fleetOverview: () => request<FleetOverview>('GET', '/api/v1/admin/fleet/overview'),
 	nodeHealth: (id: string) =>
 		request<NodeHealthDetail>('GET', `/api/v1/admin/nodes/${enc(id)}/health`),
 	statusEvents: (id: string, kind?: string, limit = 50) =>

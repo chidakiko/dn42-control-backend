@@ -4,6 +4,8 @@
 	import { toast } from '$lib/toast.svelte';
 	import { fmtTime } from '$lib/format';
 	import { t } from '$lib/i18n.svelte';
+	import Icon from '$lib/components/Icon.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import type { EnrollmentTokenOut } from '$lib/types';
 	import Modal from '$lib/components/Modal.svelte';
 	import SecretReveal from '$lib/components/SecretReveal.svelte';
@@ -69,15 +71,21 @@
 	}
 </script>
 
-<div class="spread" style="margin-bottom:1.25rem">
-	<h1>{t('enr.title')}</h1>
-	<div class="inline">
-		<button class="btn sm" onclick={load} disabled={loading}>↻ {t('common.refresh')}</button>
+<div class="page-head">
+	<div>
+		<div class="ph-title">
+			<Icon name="tokens" size={22} />
+			<h1>{t('enr.title')}</h1>
+		</div>
+		<p class="ph-sub">{t('enr.note')}</p>
+	</div>
+	<div class="ph-actions">
+		<button class="btn sm" onclick={load} disabled={loading}>
+			<Icon name="refresh" size={15} />{t('common.refresh')}
+		</button>
 		<button class="btn primary sm" onclick={() => (showCreate = true)}>+ {t('enr.new')}</button>
 	</div>
 </div>
-
-<p class="faint" style="font-size:0.8rem; margin-top:-0.75rem">{t('enr.note')}</p>
 
 {#if loading && items.length === 0}
 	<div class="empty">{t('common.loading')}</div>
@@ -86,7 +94,13 @@
 {:else}
 	<div class="card" style="padding:0">
 		{#if items.length === 0}
-			<div class="empty">{t('enr.empty')}</div>
+			<EmptyState
+				icon="tokens"
+				title={t('enr.empty')}
+				hint={t('enr.note')}
+				actionLabel={'+ ' + t('enr.new')}
+				onaction={() => (showCreate = true)}
+			/>
 		{:else}
 			<table>
 				<thead>

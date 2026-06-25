@@ -41,6 +41,43 @@ class FleetHealth(_Dto):
     nodes: list[NodeHealthRow]
 
 
+class FleetOverviewNode(NodeHealthRow):
+    """``GET /admin/fleet/overview`` 里的单节点行:健康概览 + 该节点启用的服务角色。
+
+    ``capabilities`` 取自 DesiredState 的 ``runtime.services`` 中 ``enabled`` 的
+    ``role.value``(去重排序),例如 ``["bird-router", "rpki-cache", ...]``;无 DesiredState
+    时为空列表。继承 ``NodeHealthRow`` 的全部字段。
+    """
+
+    capabilities: list[str] = []
+
+
+class FleetLink(_Dto):
+    """fleet 物理 WireGuard 网格(OSPF/IGP 邻接)的一条无向去重边。
+
+    ``a``/``b`` 是字典序排序后的两端节点;``a_iface``/``b_iface`` 是各自侧承载该邻接的
+    接口名(可能为 ``None``);``cost`` 取任一侧提供的非空开销。
+    """
+
+    a: str
+    b: str
+    a_iface: str | None = None
+    b_iface: str | None = None
+    cost: int | None = None
+
+
+class FleetOverview(_Dto):
+    """``GET /admin/fleet/overview``:一次性聚合 fleet 健康 + 服务能力 + 内部互联网格。
+
+    供 Web 仪表盘单次拉取(取代逐节点 N 次调用):``summary`` 同 ``GET /admin/health``;
+    ``nodes`` 是 fleet 健康行 + ``capabilities``;``links`` 是全网去重的物理 WG 邻接边。
+    """
+
+    summary: dict[NodeHealth, int]
+    nodes: list[FleetOverviewNode]
+    links: list[FleetLink]
+
+
 class NodeHealthDetail(NodeHealthRow):
     """``GET /admin/nodes/{id}/health``:单节点健康 + 最近三类上报原文。"""
 
@@ -69,6 +106,9 @@ class NodeStatusEvents(_Dto):
 
 __all__ = [
     "FleetHealth",
+    "FleetLink",
+    "FleetOverview",
+    "FleetOverviewNode",
     "NodeHealthDetail",
     "NodeHealthRow",
     "NodeStatusEvents",
