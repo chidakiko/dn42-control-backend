@@ -18,6 +18,7 @@ from ..services.node_status import NodeStatusStore
 from ..services.pending_registrations import PendingRegistrationStore
 from ..services.routing import RoutingStore
 from ..services.tokens import TokenPrincipal, TokenStore
+from ..services.traffic import TrafficStore
 
 _AUTH_SCHEME = "Bearer "
 
@@ -42,6 +43,10 @@ def get_node_status(request: Request) -> NodeStatusStore:
 
 def get_routing(request: Request) -> RoutingStore:
     return request.app.state.routing
+
+
+def get_traffic(request: Request) -> TrafficStore:
+    return request.app.state.traffic
 
 
 def get_pending_registrations(request: Request) -> PendingRegistrationStore:
@@ -170,6 +175,7 @@ __all__ = [
     "get_node_status",
     "get_pending_registrations",
     "get_routing",
+    "get_traffic",
     "get_tokens",
     "get_tokens_ws",
     "parse_ws_bearer",

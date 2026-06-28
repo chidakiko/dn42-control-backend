@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-"""节点路由全表只读视图（管理面）。
+"""节点路由全表只读视图（管理面 / 通用接口）。
 
-数据来自 ``RoutingStore``（agent 周期上报的 ``RoutingTableSnapshot`` 聚合）：
+数据来自 ``RoutingStore``（agent 周期上报的 ``RoutingTableSnapshot`` 聚合）。这些是
+细粒度的通用读接口（供对接其他系统用）：
 
+- ``GET /admin/routing/fleet``：全 fleet 路由概览。
 - ``GET /admin/nodes/{id}/routing/summary``：全表规模 + RPKI / 前缀长度 / AS path 分布。
 - ``GET /admin/nodes/{id}/routing/origins``：起源 AS Top 榜。
 - ``GET /admin/nodes/{id}/routing/prefixes``：分页 / 过滤的路由检索。
 - ``GET /admin/nodes/{id}/routing/timeline``：路由表趋势 + churn。
+
+WebUI 专用的聚合视图（routing/fleet-overview、routing/dashboard、internal-topology）
+已挪到 ``/api/v1/ui`` 下（见 ``api/v1/ui/routing.py``）。
 """
 
 from typing import Literal
@@ -16,40 +21,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ....schemas.routing import (
     FleetRouting,
-    InternalTopologyView,
     RoutingOrigins,
     RoutingPrefixes,
     RoutingSummary,
     RoutingTimeline,
 )
-from ....services.desired_state import DesiredStateStore
-from ....services.internal_topology import build_internal_topology_view
 from ....services.routing import RoutingStore
-from ...deps import get_desired_state, get_routing
+from ...deps import get_routing
 
 router = APIRouter()
-
-
-@router.get("/nodes/{node_id}/internal-topology", response_model=InternalTopologyView)
-async def node_internal_topology(
-    node_id: str,
-    desired: DesiredStateStore = Depends(get_desired_state),
-    routing: RoutingStore = Depends(get_routing),
-) -> dict:
-    """iBGP + OSPF 内部互联视图：``bird.internal_topology`` 配置 + 路由层 liveness。
-
-    iBGP/OSPF 不是 ``bgp_sessions`` 记录（看不到于"BGP 会话"面板），由 internal
-    topology 自动合成；这里把它单独暴露，并关联路由快照里各协议贡献的最优路由数。
-    """
-
-    state = await desired.get(node_id)
-    if state is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"node {node_id} has no published desired state",
-        )
-    summary = await routing.get_summary(node_id)
-    return build_internal_topology_view(node_id, state.bird.internal_topology, summary)
 
 
 @router.get("/routing/fleet", response_model=FleetRouting)

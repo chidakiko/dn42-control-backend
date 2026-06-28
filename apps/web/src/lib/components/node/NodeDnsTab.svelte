@@ -2,6 +2,7 @@
 	import { api, errorMessage } from '$lib/api';
 	import { toast } from '$lib/toast.svelte';
 	import { t } from '$lib/i18n.svelte';
+	import Select from '$lib/components/Select.svelte';
 	import type { DnsGroupOut } from '$lib/types';
 
 	let {
@@ -62,12 +63,16 @@
 		<span class="mono">{currentName ?? t('node.dns.none')}</span>
 	</div>
 	<div class="row">
-		<select bind:value={selected} disabled={loading} style="width:auto; min-width:14rem">
-			<option value="">{t('node.dns.none')}</option>
-			{#each groups as g (g.id)}
-				<option value={g.id}>{g.name}</option>
-			{/each}
-		</select>
+		<Select
+			width="14rem"
+			disabled={loading}
+			value={selected === '' ? '' : String(selected)}
+			options={[
+				{ value: '', label: t('node.dns.none') },
+				...groups.map((g) => ({ value: String(g.id), label: g.name }))
+			]}
+			onChange={(v) => (selected = v === '' ? '' : Number(v))}
+		/>
 		<button class="btn primary sm" onclick={apply} disabled={saving || loading}>
 			{t('node.dns.apply')}
 		</button>

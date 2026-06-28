@@ -8,6 +8,8 @@
 	import { toast } from '$lib/toast.svelte';
 	import { t } from '$lib/i18n.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import Select from '$lib/components/Select.svelte';
+	import SkeletonText from '$lib/components/SkeletonText.svelte';
 
 	let { nodeId }: { nodeId: string } = $props();
 
@@ -118,7 +120,7 @@
 </script>
 
 {#if loading}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonText lines={5} />
 {:else if err}
 	<p class="error-text">{err}</p>
 {:else}
@@ -182,12 +184,16 @@
 						<td class="mono">{row.name}</td>
 						<td class="mono faint">{row.remote_asn}</td>
 						<td>
-							<select bind:value={row.lat} style="max-width:11rem">
-								<option value="">{t('rt.sess.unset')}</option>
-								{#each LAT_TIERS as tier (tier.v)}
-									<option value={tier.v}>{tier.label}</option>
-								{/each}
-							</select>
+							<Select
+								width="11rem"
+								size="sm"
+								value={row.lat === '' ? '' : String(row.lat)}
+								options={[
+									{ value: '', label: t('rt.sess.unset') },
+									...LAT_TIERS.map((tier) => ({ value: String(tier.v), label: tier.label }))
+								]}
+								onChange={(v) => (row.lat = v === '' ? '' : Number(v))}
+							/>
 						</td>
 						<td class="actions">
 							<button class="btn ghost sm" onclick={() => saveSession(row)} disabled={savingSid === row.id}>

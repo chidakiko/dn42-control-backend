@@ -121,38 +121,46 @@
 	</div>
 </div>
 
-{#if loading && nodes.length === 0}
-	<div class="card">
-		<div class="stack" style="gap:0.9rem">
-			{#each Array(7) as _, i (i)}<Skeleton h="1.4rem" />{/each}
-		</div>
-	</div>
-{:else if error}
+{#if error}
 	<div class="card"><p class="error-text">{error}</p></div>
-{:else}
+{:else if !loading && nodes.length === 0}
 	<div class="card" style="padding:0" in:fade={{ duration: 150 }}>
-		{#if nodes.length === 0}
-			<EmptyState
-				icon="nodes"
-				title={t('nodes.empty')}
-				hint={t('nodes.subtitle')}
-				actionLabel={'+ ' + t('nodes.new')}
-				onaction={() => (showCreate = true)}
-			/>
-		{:else}
-			<table>
-				<thead>
-					<tr>
-						<th>{t('nodes.col.id')}</th>
-						<th>{t('nodes.col.asn')}</th>
-						<th>{t('nodes.col.routerId')}</th>
-						<th>{t('nodes.col.site')}</th>
-						<th>{t('nodes.col.lifecycle')}</th>
-						<th>{t('nodes.col.gen')}</th>
-						<th>{t('nodes.col.updated')}</th>
-					</tr>
-				</thead>
-				<tbody>
+		<EmptyState
+			icon="nodes"
+			title={t('nodes.empty')}
+			hint={t('nodes.subtitle')}
+			actionLabel={'+ ' + t('nodes.new')}
+			onaction={() => (showCreate = true)}
+		/>
+	</div>
+{:else}
+	<div class="card" style="padding:0">
+		<table>
+			<thead>
+				<tr>
+					<th>{t('nodes.col.id')}</th>
+					<th>{t('nodes.col.asn')}</th>
+					<th>{t('nodes.col.routerId')}</th>
+					<th>{t('nodes.col.site')}</th>
+					<th>{t('nodes.col.lifecycle')}</th>
+					<th>{t('nodes.col.gen')}</th>
+					<th>{t('nodes.col.updated')}</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#if loading && nodes.length === 0}
+					{#each Array(6) as _, i (i)}
+						<tr>
+							<td><Skeleton w="6rem" h="0.85rem" /></td>
+							<td><Skeleton w="5rem" h="0.85rem" /></td>
+							<td><Skeleton w="5.5rem" h="0.85rem" /></td>
+							<td><Skeleton w="2.5rem" h="0.85rem" /></td>
+							<td><Skeleton w="4.5rem" h="1.2rem" radius="999px" /></td>
+							<td><Skeleton w="1.2rem" h="0.85rem" /></td>
+							<td><Skeleton w="6rem" h="0.8rem" /></td>
+						</tr>
+					{/each}
+				{:else}
 					{#each nodes as n (n.node_id)}
 						<tr>
 							<td><a href="/nodes/{n.node_id}" class="mono">{n.node_id}</a></td>
@@ -168,9 +176,9 @@
 							<td class="faint">{fmtTime(n.updated_at)}</td>
 						</tr>
 					{/each}
-				</tbody>
-			</table>
-		{/if}
+				{/if}
+			</tbody>
+		</table>
 	</div>
 {/if}
 

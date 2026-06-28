@@ -200,6 +200,12 @@ def _decide_action(
         return ContainerAction.RECREATE, _drift_reason(definition, existing, previous)
     if existing.status != RuntimeResourceStatus.RUNNING:
         return ContainerAction.RECREATE, f"observed status={existing.status.value}"
+    if existing.healthy is False:
+        # 容器 Up 但健康检查持续失败 = 服务级死亡(如 bird daemon 死在 ``sleep infinity``
+        # 的容器里、CoreDNS 绑不上地址崩溃循环)。config_hash + Docker 状态都看不出这种
+        # 运行时漂移,据存活探针补救:重建容器。``healthy is None``(无探活/未确认)不触发,
+        # 只在探针**明确判失败**时才动手,避免误杀。
+        return ContainerAction.RECREATE, "running but unhealthy (service liveness probe failing)"
     return ContainerAction.KEEP, "definition hash matches"
 
 

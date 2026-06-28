@@ -16,6 +16,8 @@
 	import TrendChart from './../charts/TrendChart.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import Modal from './../Modal.svelte';
+	import Select from './../Select.svelte';
+	import SkeletonText from './../SkeletonText.svelte';
 
 	let { nodeId }: { nodeId: string } = $props();
 
@@ -45,14 +47,11 @@
 		if (!summary) loading = true;
 		err = '';
 		try {
-			const [s, o, tl] = await Promise.all([
-				api.routingSummary(nodeId),
-				api.routingOrigins(nodeId, 15),
-				api.routingTimeline(nodeId, 200)
-			]);
-			summary = s;
-			origins = o;
-			timeline = tl;
+			// 一次取全 summary + origins + timeline（取代 3 次跨网往返）。
+			const dash = await api.routingDashboard(nodeId, 15, 200);
+			summary = dash.summary;
+			origins = dash.origins;
+			timeline = dash.timeline;
 		} catch (e) {
 			// 404 = never reported → show empty state, not an error banner.
 			summary = null;
@@ -295,7 +294,7 @@
 </div>
 
 {#if loading && !summary}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonText lines={5} height="1.4rem" />
 {:else if !summary}
 	<div class="empty">{t('routing.empty')}</div>
 {:else}
@@ -477,14 +476,21 @@
 						>{t('routing.prefilter.filteredTitle')}
 						<b>({filteredRoutes.length}{filteredRoutes.length >= 5000 ? '+' : ''})</b></span
 					>
-					<select bind:value={filterReason} onchange={() => (filteredPage = 0)} style="width:auto">
-						<option value=""
-							>{t('routing.prefilter.reason.col')}: {t('common.total')} ({filteredRoutes.length})</option
-						>
-						{#each reasonOptions as k (k)}
-							<option value={k}>{reasonLabel(k)} ({reasonCounts[k]})</option>
-						{/each}
-					</select>
+					<Select
+						width="auto"
+						value={filterReason}
+						options={[
+							{
+								value: '',
+								label: `${t('routing.prefilter.reason.col')}: ${t('common.total')} (${filteredRoutes.length})`
+							},
+							...reasonOptions.map((k) => ({ value: k, label: `${reasonLabel(k)} (${reasonCounts[k]})` }))
+						]}
+						onChange={(v) => {
+							filterReason = v;
+							filteredPage = 0;
+						}}
+					/>
 				</div>
 				<table class="pf">
 					<thead>
@@ -571,16 +577,32 @@
 	<div class="card-head" style="margin-top:1rem">
 		<h4>{t('routing.prefixes')} {#if prefixes}<span class="faint">({prefixes.total})</span>{/if}</h4>
 		<div class="inline">
-			<select bind:value={family} onchange={resetAndSearch} style="width:auto">
-				<option value="">{t('routing.family')}: {t('common.total')}</option>
-				<option value="4">{t('routing.v4')}</option>
-				<option value="6">{t('routing.v6')}</option>
-			</select>
-			<select bind:value={scope} onchange={resetAndSearch} style="width:auto">
-				<option value="all">{t('routing.scope')}: {t('routing.scope.all')}</option>
-				<option value="local">{t('routing.scope.local')}</option>
-				<option value="external">{t('routing.scope.external')}</option>
-			</select>
+			<Select
+				width="auto"
+				value={family}
+				options={[
+					{ value: '', label: `${t('routing.family')}: ${t('common.total')}` },
+					{ value: '4', label: t('routing.v4') },
+					{ value: '6', label: t('routing.v6') }
+				]}
+				onChange={(v) => {
+					family = v as '' | '4' | '6';
+					resetAndSearch();
+				}}
+			/>
+			<Select
+				width="auto"
+				value={scope}
+				options={[
+					{ value: 'all', label: `${t('routing.scope')}: ${t('routing.scope.all')}` },
+					{ value: 'local', label: t('routing.scope.local') },
+					{ value: 'external', label: t('routing.scope.external') }
+				]}
+				onChange={(v) => {
+					scope = v as 'all' | 'local' | 'external';
+					resetAndSearch();
+				}}
+			/>
 			<input
 				placeholder={t('routing.search')}
 				bind:value={q}

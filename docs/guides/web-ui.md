@@ -24,13 +24,17 @@ npm run build      # 产物在 apps/web/build/（adapter-static）
 
 ## 仪表盘
 
-![健康概览](../images/wui-dashboard.png)
+![机群拓扑](../images/wui-dashboard.png)
 
-fleet 级健康概览：甜甜圈按健康五态（`ok` / `stale` / `degraded` / `down` / `unknown`）分布，点图例可筛选下方节点表。表里每行是一个节点的世代对（期望/已观测）、上报/应用状态、漂移条与最近快照时间，可下钻到节点。健康判定见 [monitoring-and-troubleshooting.md](monitoring-and-troubleshooting.md)。
+页首 hero 是**机群拓扑世界地图**：节点按物理站点落在等距投影地图上，以真实内部 WG 链路（OSPF 邻接）用大圆弧相连；右上 KPI 显示「正常 / 总数」，可按 **华南 / 华东 / 东亚 / 全球** 切换视图——所选区域同时**筛选下方节点表**。健康判定见 [monitoring-and-troubleshooting.md](monitoring-and-troubleshooting.md)。
 
-页面下半部是 **机群路由概览**：全 fleet 路由总量、IPv4/IPv6 占比与 RPKI 有效率两枚甜甜圈，外加按节点拆分的明细。
+下方节点表每行是一个节点：健康、**能力图标**（DNS / RPKI / BIRD / WireGuard，悬浮看全称）、世代对（期望/已观测）、上报/应用状态、漂移与最近快照时间，可下钻到节点。
+
+紧随其后是 **机群路由全表**：全 fleet 路由总量与 IPv4/IPv6、RPKI 有效率的统计条 + 半环仪表，外加按节点拆分的明细。
 
 ![机群路由](../images/wui-fleet-routing.png)
+
+页面末尾是 **流量趋势** 卡片（示例数据）：仿 Cloudflare Radar 流量趋势的多序列折线——总流量 / HTTP 流量两条实线 + 「之前 7 天」虚线对比，Y 轴从 0 起，悬浮看每点读数。
 
 ## 节点列表
 
@@ -40,17 +44,24 @@ fleet 级健康概览：甜甜圈按健康五态（`ok` / `stale` / `degraded` /
 
 ## 节点详情
 
-顶部多页签：**概览 / Peering / 接口 / BGP 会话 / 内部互联 / 路由表 / DNS / 版本历史 / 状态事件 / 期望状态 / 令牌**。支持 `?tab=<id>` 深链。
+顶部是**两级页签**——5 个顶层分组，每组下挂相关子页，子页以药丸式二级导航呈现：
+
+- **概览**（无子页）
+- **互联**：Peering · 接口 · BGP 会话 · 内部互联
+- **路由**：路由表 · 路由调优
+- **DNS**（无子页）
+- **运维**：版本历史 · 状态事件 · 期望状态 · 令牌
+
+支持 `?tab=<id>` 深链（直接落到对应子页并展开其分组）。
 
 ### 概览
 
 ![节点概览](../images/wui-node-overview.png)
 
-顶部是从上报历史派生的**趋势小卡**（当前漂移 + 走势、apply 成功率、最近一次 apply 状态），下面是节点身份字段 + 危险操作（退役 / 删除，见 [node-onboarding.md](node-onboarding.md#节点退役)）。右上角：
+顶部是从上报历史派生的**趋势小卡**（当前漂移 + 走势、apply 成功率、最近一次 apply 状态）与 **agent 自观测**（CPU / 内存 / 采集耗时等，加载时以骨架屏占位），下面是节点身份字段。页内操作归整成两块清晰分区：
 
-- **⚡ 一键互联** —— 打开添加 peer 向导（见下），新增对等连接的**唯一入口**。
-- **通知更新 / 请求快照** —— 手动给 agent 推事件（节点掉线时禁用）。
-- **编辑** —— 改节点身份与 `base_template`（含 `bird.internal_topology`，见 [monitoring-and-troubleshooting.md](monitoring-and-troubleshooting.md#内部互联ibgp--ospf--internal_topology)）。
+- **常用操作** —— **⚡ 一键互联**（打开添加 peer 向导，见下，新增对等连接的**唯一入口**）、**通知更新 / 请求快照**（手动给 agent 推事件，节点掉线时禁用）、**编辑**（改节点身份与 `base_template`，含 `bird.internal_topology`，见 [monitoring-and-troubleshooting.md](monitoring-and-troubleshooting.md#内部互联ibgp--ospf--internal_topology)）。
+- **危险操作** —— 退役 / 删除（见 [node-onboarding.md](node-onboarding.md#节点退役)）。
 
 ### Peering / 接口 / BGP 会话
 
@@ -68,7 +79,7 @@ iBGP / OSPF 不是 BGP 会话记录，而由 `internal_topology` 自动合成，
 
 ![路由表](../images/wui-node-routing.png)
 
-对该节点 BIRD 全表的分析视图：路由总量与 IPv4/IPv6、本地起源计数；**族分布 / RPKI 有效率 / 过滤前被拒**三枚甜甜圈（上图）；前缀长度与 AS-path 长度分布、路由量时间序列与 churn；过滤前（import-table）per-peer 统计 + 无效 / 被拒路由明细；以及可按族 / 范围 / 关键字筛选、点开看每条路径（AS-path + community）的前缀表。数据来自 agent 周期上报的路由快照，独立于对账。
+对该节点 BIRD 全表的分析视图：路由总量与 IPv4/IPv6、本地起源计数；**族分布 / RPKI 有效率 / 过滤前被拒**三枚甜甜圈（上图）；前缀长度与 AS-path 长度分布、**Radar 风格的路由表规模趋势图**（Y 轴紧贴数据缩放、悬浮读数）与 churn；过滤前（import-table）per-peer 统计 + 无效 / 被拒路由明细；以及可按族 / 范围 / 关键字筛选、点开看每条路径（AS-path + community）的前缀表。数据来自 agent 周期上报的路由快照，独立于对账。
 
 ### DNS
 

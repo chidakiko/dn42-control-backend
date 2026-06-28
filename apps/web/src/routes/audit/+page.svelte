@@ -5,6 +5,8 @@
 	import { t } from '$lib/i18n.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Select from '$lib/components/Select.svelte';
+	import SkeletonTable from '$lib/components/SkeletonTable.svelte';
 	import type { AuditEntry } from '$lib/types';
 	import Modal from '$lib/components/Modal.svelte';
 	import JsonView from '$lib/components/JsonView.svelte';
@@ -53,12 +55,15 @@
 		<p class="ph-sub">{t('audit.subtitle')}</p>
 	</div>
 	<div class="ph-actions">
-		<select bind:value={limit} onchange={load} style="width:auto">
-			<option value={50}>{t('audit.last', 50)}</option>
-			<option value={100}>{t('audit.last', 100)}</option>
-			<option value={250}>{t('audit.last', 250)}</option>
-			<option value={1000}>{t('audit.last', 1000)}</option>
-		</select>
+		<Select
+			width="auto"
+			value={String(limit)}
+			options={[50, 100, 250, 1000].map((n) => ({ value: String(n), label: t('audit.last', n) }))}
+			onChange={(v) => {
+				limit = Number(v);
+				load();
+			}}
+		/>
 		<button class="btn sm" onclick={load} disabled={loading}>
 			<Icon name="refresh" size={15} />{t('common.refresh')}
 		</button>
@@ -68,7 +73,19 @@
 <p class="faint" style="font-size:0.8rem; margin-top:-0.75rem">{t('audit.note')}</p>
 
 {#if loading && items.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<div class="card" style="padding:0">
+		<SkeletonTable
+			headers={[
+				t('audit.col.when'),
+				t('audit.col.actor'),
+				t('audit.col.method'),
+				t('audit.col.path'),
+				t('audit.col.status'),
+				''
+			]}
+			cols={['6rem', '4rem', '3rem', '12rem', '3rem', '2rem']}
+		/>
+	</div>
 {:else if error}
 	<div class="card"><p class="error-text">{error}</p></div>
 {:else}

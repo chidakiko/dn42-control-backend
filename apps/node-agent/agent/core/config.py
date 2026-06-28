@@ -49,9 +49,17 @@ class AgentConfig:
     local_convergence: bool = True
     # 路由全表周期采集间隔（秒）。独立于 reconcile 的纯观测；设 0 关闭采集。
     routing_interval_seconds: float = 300.0
+    # WG 流量 30s 轻量采集间隔（秒）。独立于 reconcile 的高频观测：只跑一次
+    # ``wg show all transfer`` 求和上报，供控制面画细粒度吞吐曲线（比数分钟的完整快照
+    # 高分辨率）。设 0 关闭。
+    traffic_interval_seconds: float = 30.0
     # WG endpoint 周期重解析间隔（秒）。独立于 reconcile 的自愈：对端走动态 DNS、IP
     # 变更后内核仍钉死旧 IP，本任务据握手超时用域名重设 endpoint。设 0 关闭。
     reresolve_interval_seconds: float = 45.0
+    # L3 漂移自愈间隔（秒）。独立于 reconcile 的运行时纠偏：周期比对期望接口（WG + dummy）
+    # 与 netns 实际存在的接口，缺失即重跑 apply-all-wg 补齐（容器 Up 但接口被删/未补齐的
+    # 运行时漂移，config_hash 看不见）。设 0 关闭。
+    l3_heal_interval_seconds: float = 60.0
     # 进程自观测间隔（秒）：周期采集 agent 自身 CPU%/RSS 写入 metrics 文件，并对持续
     # 高 CPU 告警。设 0 关闭。背景循环耗时（路由/reresolve）也随其各自循环一并记录。
     self_monitor_interval_seconds: float = 60.0
@@ -105,7 +113,9 @@ _ALLOWED_KEYS = {
     "http_timeout_seconds",
     "local_convergence",
     "routing_interval_seconds",
+    "traffic_interval_seconds",
     "reresolve_interval_seconds",
+    "l3_heal_interval_seconds",
     "self_monitor_interval_seconds",
     "cpu_warn_percent",
     "bird_socket_path",
@@ -145,7 +155,9 @@ _ENV_KEYS: dict[str, str] = {
     "DN42_AGENT_HTTP_TIMEOUT_SECONDS": "http_timeout_seconds",
     "DN42_AGENT_LOCAL_CONVERGENCE": "local_convergence",
     "DN42_AGENT_ROUTING_INTERVAL_SECONDS": "routing_interval_seconds",
+    "DN42_AGENT_TRAFFIC_INTERVAL_SECONDS": "traffic_interval_seconds",
     "DN42_AGENT_RERESOLVE_INTERVAL_SECONDS": "reresolve_interval_seconds",
+    "DN42_AGENT_L3_HEAL_INTERVAL_SECONDS": "l3_heal_interval_seconds",
     "DN42_AGENT_SELF_MONITOR_INTERVAL_SECONDS": "self_monitor_interval_seconds",
     "DN42_AGENT_CPU_WARN_PERCENT": "cpu_warn_percent",
     "DN42_AGENT_BIRD_SOCKET_PATH": "bird_socket_path",
@@ -163,7 +175,9 @@ def _apply_env(config: AgentConfig, env: dict[str, str] | os._Environ[str]) -> A
         elif field_name in {
             "http_timeout_seconds",
             "routing_interval_seconds",
+            "traffic_interval_seconds",
             "reresolve_interval_seconds",
+            "l3_heal_interval_seconds",
             "self_monitor_interval_seconds",
             "cpu_warn_percent",
         }:

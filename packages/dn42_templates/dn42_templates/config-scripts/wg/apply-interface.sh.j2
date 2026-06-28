@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 串行化单接口应用，避免与 reconcile 收敛 / l3_heal 自愈并发时 ``ip link add`` 的
+# check-then-create 竞态及临时 conf 的 cp/mv 竞态（详见 apply-dummy.sh.j2）。
+mkdir -p /run/dn42-control 2>/dev/null || true
+exec 9>/run/dn42-control/wg-apply.lock
+flock 9
+
 IF={{ interface_name | shell_quote }}
 WG_CONF="/etc/wireguard/${IF}.conf"
 PRIVATE_DIR="/run/dn42-control/wireguard"
@@ -21,7 +27,9 @@ if [ -f "${SECRET_KEY_FILE}" ]; then
   awk -v k="${WG_KEY}" '/^[[:space:]]*PrivateKey[[:space:]]*=/{print "PrivateKey = " k; next} {print}' "${PRIVATE_CONF}" > "${PRIVATE_CONF}.resolved"
   mv "${PRIVATE_CONF}.resolved" "${PRIVATE_CONF}"
 fi
-ip link show "${IF}" >/dev/null 2>&1 || ip link add dev "${IF}" type wireguard
+# 幂等抗并发：已存在即忽略，随后 show 兜底——确实没建出来才让 set -e 失败。
+ip link add dev "${IF}" type wireguard 2>/dev/null || true
+ip link show "${IF}" >/dev/null 2>&1
 wg-quick strip "${PRIVATE_CONF}" > "${TMP_CONF}"
 wg syncconf "${IF}" "${TMP_CONF}"
 {% for command in address_commands %}

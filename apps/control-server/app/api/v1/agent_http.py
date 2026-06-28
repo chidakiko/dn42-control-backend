@@ -29,6 +29,7 @@ from dn42_schemas import (
     WireGuardKeyReport,
     WireGuardKeyReportResult,
     WireGuardReresolveReport,
+    WireGuardTrafficSample,
 )
 
 from ...core.config import ControlServerConfig
@@ -41,6 +42,7 @@ from ...services.node_status import NodeStatusStore
 from ...services.pending_registrations import PendingRegistrationStore
 from ...services.routing import RoutingStore
 from ...services.tokens import TokenPrincipal, TokenStore, hash_token
+from ...services.traffic import TrafficStore
 from ...services.wireguard_keys import STATUS_UNKNOWN_NODE, apply_wireguard_key_report
 from ..deps import (
     get_config,
@@ -52,6 +54,7 @@ from ..deps import (
     get_pending_registrations,
     get_routing,
     get_tokens,
+    get_traffic,
     require_agent,
 )
 
@@ -302,6 +305,29 @@ async def post_routing_table(
         "node_id": snapshot.node_id,
         "observation": snapshot.observation.value,
         "routes": len(snapshot.routes),
+    }
+
+
+@router.post("/wireguard-traffic")
+async def post_wireguard_traffic(
+    sample: WireGuardTrafficSample,
+    principal: TokenPrincipal = Depends(require_agent),
+    traffic: TrafficStore = Depends(get_traffic),
+) -> dict:
+    """接收 agent 30s 轻量 WG 流量采样（全 peer 累计收 / 发字节之和）。
+
+    独立于 reconcile 的高频观测：压入 Redis 热窗口 + 5min 降采样存档，供 ``/traffic``
+    画 30s 粒度吞吐曲线。绝不参与对账 / apply。
+    """
+
+    _ensure_self(principal, sample.node_id)
+    await traffic.record_sample(sample)
+    return {
+        "accepted": True,
+        "node_id": sample.node_id,
+        "rx_bytes": sample.rx_bytes,
+        "tx_bytes": sample.tx_bytes,
+        "peer_count": sample.peer_count,
     }
 
 

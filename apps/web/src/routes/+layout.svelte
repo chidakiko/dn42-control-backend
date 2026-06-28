@@ -8,6 +8,10 @@
 	import { t, locale, type LangCode } from '$lib/i18n.svelte';
 	import { autoRefresh } from '$lib/refresh.svelte';
 	import { theme } from '$lib/theme.svelte';
+	import { sidebar } from '$lib/sidebar.svelte';
+	import { Tooltip as TooltipPrimitive } from 'bits-ui';
+	import Tooltip from '$lib/components/Tooltip.svelte';
+	import Select from '$lib/components/Select.svelte';
 	import Toaster from '$lib/components/Toaster.svelte';
 	import Logo from '$lib/components/Logo.svelte';
 	import Icon, { type IconName } from '$lib/components/Icon.svelte';
@@ -65,62 +69,112 @@
 {#if isLogin || !auth.isAuthed}
 	{@render children()}
 {:else}
-	<div class="shell">
-		<aside class="sidebar">
-			<div class="brand">
-				<Logo size={30} />
-				<span class="wordmark">DN42<span class="wordmark-sub">{t('app.control')}</span></span>
-				<button
-					class="theme-toggle"
-					onclick={() => theme.toggle()}
-					title={THEME_LABEL[theme.pref]}
-					aria-label="Toggle theme"
-				>
-					<Icon name={THEME_ICON[theme.pref]} size={16} />
-				</button>
-			</div>
-			<nav>
-				{#each nav as item (item.href)}
-					<a href={item.href} class:active={isActive(item.href)}>
-						<span class="ic"><Icon name={item.icon} size={18} /></span>{t(item.key)}
+	<TooltipPrimitive.Provider delayDuration={150} disableHoverableContent>
+		<div class="shell" class:collapsed={sidebar.collapsed}>
+			<aside class="sidebar">
+				<div class="brand">
+					<a class="brandlink" href="/" aria-label="DN42 Control">
+						<Logo size={28} />
+						{#if !sidebar.collapsed}
+							<span class="wordmark">DN42<span class="wordmark-sub">{t('app.control')}</span></span>
+						{/if}
 					</a>
-				{/each}
-			</nav>
-			<div class="foot">
-				<label class="ctl">
-					<span class="inline" style="gap:0.35rem">
-						{#if autoRefresh.intervalMs > 0}<span class="pulse"></span>{/if}
-						{t('nav.autorefresh')}
-					</span>
-					<select
-						value={autoRefresh.intervalMs}
-						onchange={(e) => autoRefresh.set(Number(e.currentTarget.value))}
-					>
-						{#each REFRESH_OPTS as ms (ms)}
-							<option value={ms}>{refreshLabel(ms)}</option>
-						{/each}
-					</select>
-				</label>
-				<label class="ctl">
-					<span>{t('nav.language')}</span>
-					<select
-						value={locale.code}
-						onchange={(e) => locale.set(e.currentTarget.value as LangCode)}
-					>
-						<option value="en">English</option>
-						<option value="zh">简体中文</option>
-					</select>
-				</label>
-				<div class="api-base mono" title={auth.apiBase}>{auth.apiBase}</div>
-				<button class="btn ghost sm" onclick={logout}>
-					<Icon name="logout" size={15} />{t('nav.signout')}
-				</button>
-			</div>
-		</aside>
-		<main class="content">
-			{@render children()}
-		</main>
-	</div>
+				</div>
+
+				<nav>
+					{#each nav as item (item.href)}
+						<Tooltip label={t(item.key)} enabled={sidebar.collapsed} side="right">
+							{#snippet trigger(props)}
+								<a
+									{...props}
+									href={item.href}
+									class:active={isActive(item.href)}
+									aria-label={t(item.key)}
+								>
+									<span class="ic"><Icon name={item.icon} size={18} /></span>
+									{#if !sidebar.collapsed}<span class="lbl">{t(item.key)}</span>{/if}
+								</a>
+							{/snippet}
+						</Tooltip>
+					{/each}
+				</nav>
+
+				<div class="foot">
+					{#if !sidebar.collapsed}
+						<label class="ctl">
+							<span class="inline" style="gap:0.35rem">
+								{#if autoRefresh.intervalMs > 0}<span class="pulse"></span>{/if}
+								{t('nav.autorefresh')}
+							</span>
+							<Select
+								size="sm"
+								width="auto"
+								value={String(autoRefresh.intervalMs)}
+								options={REFRESH_OPTS.map((ms) => ({ value: String(ms), label: refreshLabel(ms) }))}
+								onChange={(v) => autoRefresh.set(Number(v))}
+								ariaLabel={t('nav.autorefresh')}
+							/>
+						</label>
+						<label class="ctl">
+							<span>{t('nav.language')}</span>
+							<Select
+								size="sm"
+								width="auto"
+								value={locale.code}
+								options={[
+									{ value: 'en', label: 'English' },
+									{ value: 'zh', label: '简体中文' }
+								]}
+								onChange={(v) => locale.set(v as LangCode)}
+								ariaLabel={t('nav.language')}
+							/>
+						</label>
+						<div class="api-base mono" title={auth.apiBase}>{auth.apiBase}</div>
+					{/if}
+
+					<div class="foot-actions" class:col={sidebar.collapsed}>
+						<Tooltip label={THEME_LABEL[theme.pref]} enabled={sidebar.collapsed}>
+							{#snippet trigger(props)}
+								<button
+									{...props}
+									class="iconbtn"
+									onclick={() => theme.toggle()}
+									aria-label="Toggle theme"
+								>
+									<Icon name={THEME_ICON[theme.pref]} size={16} />
+								</button>
+							{/snippet}
+						</Tooltip>
+						<Tooltip label={t('nav.signout')} enabled={sidebar.collapsed}>
+							{#snippet trigger(props)}
+								<button {...props} class="iconbtn" onclick={logout} aria-label={t('nav.signout')}>
+									<Icon name="logout" size={16} />
+								</button>
+							{/snippet}
+						</Tooltip>
+						<Tooltip
+							label={sidebar.collapsed ? t('nav.expand') : t('nav.collapse')}
+							enabled={sidebar.collapsed}
+						>
+							{#snippet trigger(props)}
+								<button
+									{...props}
+									class="iconbtn collapse-btn"
+									onclick={() => sidebar.toggle()}
+									aria-label={sidebar.collapsed ? t('nav.expand') : t('nav.collapse')}
+								>
+									<Icon name="arrow-left" size={16} />
+								</button>
+							{/snippet}
+						</Tooltip>
+					</div>
+				</div>
+			</aside>
+			<main class="content">
+				{@render children()}
+			</main>
+		</div>
+	</TooltipPrimitive.Provider>
 {/if}
 
 <style>
@@ -128,6 +182,10 @@
 		display: grid;
 		grid-template-columns: 220px 1fr;
 		min-height: 100vh;
+		transition: grid-template-columns 0.18s ease;
+	}
+	.shell.collapsed {
+		grid-template-columns: 64px 1fr;
 	}
 	.sidebar {
 		background: var(--bg-elev);
@@ -137,14 +195,27 @@
 		position: sticky;
 		top: 0;
 		height: 100vh;
+		overflow: hidden;
 	}
 	.brand {
 		padding: 0.9rem 1rem;
+		border-bottom: 1px solid var(--border);
+		height: 56px;
+		display: flex;
+		align-items: center;
+	}
+	.collapsed .brand {
+		padding: 0.9rem 0;
+		justify-content: center;
+	}
+	.brandlink {
 		display: flex;
 		align-items: center;
 		gap: 0.55rem;
-		border-bottom: 1px solid var(--border);
-		height: 56px;
+		color: inherit;
+	}
+	.brandlink:hover {
+		text-decoration: none;
 	}
 	.wordmark {
 		display: flex;
@@ -160,25 +231,6 @@
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: var(--text-faint);
-	}
-	.theme-toggle {
-		margin-left: auto;
-		align-self: center;
-		background: transparent;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		color: var(--text-dim);
-		cursor: pointer;
-		width: 28px;
-		height: 28px;
-		font-size: 0.95rem;
-		line-height: 1;
-		padding: 0;
-	}
-	.theme-toggle:hover {
-		color: var(--text);
-		border-color: var(--text-faint);
-		background: var(--bg-elev-2);
 	}
 	nav {
 		display: flex;
@@ -198,6 +250,10 @@
 		font-size: 0.9rem;
 		font-weight: 500;
 		transition: background 0.12s, color 0.12s;
+	}
+	.collapsed nav a {
+		justify-content: center;
+		padding: 0.55rem 0;
 	}
 	nav a:hover {
 		background: var(--bg-elev-2);
@@ -241,6 +297,10 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
+	.collapsed .foot {
+		padding: 0.6rem 0;
+		align-items: center;
+	}
 	.ctl {
 		display: flex;
 		align-items: center;
@@ -251,10 +311,41 @@
 		color: var(--text-faint);
 		font-size: 0.75rem;
 	}
-	.ctl select {
-		width: auto;
-		padding: 0.2rem 0.4rem;
-		font-size: 0.78rem;
+	.foot-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		margin-top: 0.15rem;
+	}
+	.foot-actions.col {
+		flex-direction: column;
+	}
+	.iconbtn {
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		color: var(--text-dim);
+		cursor: pointer;
+		width: 30px;
+		height: 30px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+	}
+	.iconbtn:hover {
+		color: var(--text);
+		border-color: var(--text-faint);
+		background: var(--bg-elev-2);
+	}
+	/* the collapse chevron points right (→) once collapsed */
+	.collapse-btn {
+		margin-left: auto;
+		transition: transform 0.18s ease;
+	}
+	.collapsed .collapse-btn {
+		margin-left: 0;
+		transform: rotate(180deg);
 	}
 	.pulse {
 		width: 7px;
@@ -285,11 +376,12 @@
 	}
 	.content {
 		padding: 1.5rem 2rem;
-		max-width: 1200px;
 		width: 100%;
+		min-width: 0; /* let grid child shrink instead of overflowing */
 	}
 	@media (max-width: 720px) {
-		.shell {
+		.shell,
+		.shell.collapsed {
 			grid-template-columns: 1fr;
 		}
 		.sidebar {

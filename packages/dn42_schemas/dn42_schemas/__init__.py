@@ -26,6 +26,7 @@ from .agent import (
     ObservedInterface,
     ObservedRoute,
     ObservedWireGuardInterface,
+    ObservedWireGuardPeer,
     PlanSummary,
     PrefilterPeerStat,
     PrefilterRoute,
@@ -38,6 +39,7 @@ from .agent import (
     WireGuardKeyReportResult,
     WireGuardReresolveEntry,
     WireGuardReresolveReport,
+    WireGuardTrafficSample,
 )
 from .base import StrictModel
 from .desired_state import DesiredState, TemplateSetSpec
@@ -128,6 +130,7 @@ __all__ = [
     "ObservedInterface",
     "ObservedRoute",
     "ObservedWireGuardInterface",
+    "ObservedWireGuardPeer",
     "PlanSummary",
     "PortPublishSpec",
     "PrefilterPeerStat",
@@ -162,4 +165,5 @@ __all__ = [
     "WireGuardPortRangeSpec",
     "WireGuardReresolveEntry",
     "WireGuardReresolveReport",
+    "WireGuardTrafficSample",
 ]

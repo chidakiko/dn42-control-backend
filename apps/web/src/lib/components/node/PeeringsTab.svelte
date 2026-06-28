@@ -6,6 +6,7 @@
 	import { t } from '$lib/i18n.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import Modal from './../Modal.svelte';
+	import SkeletonTable from './../SkeletonTable.svelte';
 
 	let { nodeId, onchange }: { nodeId: string; onchange?: () => void } = $props();
 
@@ -108,7 +109,17 @@
 <p class="faint" style="font-size:0.78rem; margin-top:-0.4rem">{t('peer.note')}</p>
 
 {#if loading && items.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonTable
+		headers={[
+			t('peer.col.name'),
+			t('peer.col.remoteAsn'),
+			t('peer.col.remoteNode'),
+			t('peer.col.type'),
+			t('peer.col.enabled'),
+			''
+		]}
+		cols={['7rem', '5rem', '5rem', '4rem', '3rem', '3rem']}
+	/>
 {:else if err}
 	<p class="error-text">{err}</p>
 {:else if items.length === 0}

@@ -11,6 +11,24 @@
 		mono?: boolean;
 		options?: string[];
 		fields?: SpecField[];
+		// Show this field only when another field (e.g. `kind`) holds a given value.
+		// Lets one form adapt to the resource subtype — e.g. WireGuard-only fields on
+		// a generic "link" form that also edits dummy interfaces.
+		showWhen?: { key: string; equals: string };
+	}
+
+	// A live-status pill for a row, mapped from the node's latest snapshot.
+	export interface RowStatus {
+		cls: string; // global .badge class: ok / stale / down / neutral
+		label: string;
+		title?: string;
+	}
+	// An observed-only row (no config record) to append after the configured rows —
+	// e.g. iBGP sessions, which are synthesised, not stored as editable specs.
+	export interface ObservedRow {
+		name: string;
+		status: RowStatus;
+		detail?: string;
 	}
 </script>
 
@@ -25,8 +43,9 @@
 	import { t } from '$lib/i18n.svelte';
 	import Modal from './../Modal.svelte';
 	import JsonEditor from './../JsonEditor.svelte';
-	import JsonView from './../JsonView.svelte';
 	import Icon from './../Icon.svelte';
+	import Select from './../Select.svelte';
+	import SkeletonTable from './../SkeletonTable.svelte';
 	import type { PeeringOut } from '$lib/types';
 
 	interface SpecItem {
@@ -50,7 +69,10 @@
 		load,
 		create,
 		update,
-		remove
+		remove,
+		statusHeader,
+		statusOf,
+		extraRows = []
 	}: {
 		title: string;
 		singular: string;
@@ -62,6 +84,11 @@
 		create: (body: Record<string, unknown>) => Promise<unknown>;
 		update: (id: number, body: Record<string, unknown>) => Promise<unknown>;
 		remove: (id: number) => Promise<void>;
+		// Optional live-status column: header text + a per-row mapper from the
+		// snapshot. `extraRows` appends observed-only rows (e.g. iBGP) with no CRUD.
+		statusHeader?: string;
+		statusOf?: (it: SpecItem) => RowStatus | null;
+		extraRows?: ObservedRow[];
 	} = $props();
 
 	let items = $state<SpecItem[]>([]);
@@ -71,13 +98,6 @@
 	let showForm = $state(false);
 	let editing = $state<SpecItem | null>(null);
 	let saving = $state(false);
-	let viewing = $state<SpecItem | null>(null);
-	let showView = $state(false);
-
-	function view(it: SpecItem) {
-		viewing = it;
-		showView = true;
-	}
 
 	// form state
 	let specText = $state('');
@@ -102,9 +122,17 @@
 		return out;
 	}
 
+	// A field is active when it has no showWhen gate, or the gating field matches.
+	function visible(f: SpecField): boolean {
+		return !f.showWhen || form[f.showWhen.key] === f.showWhen.equals;
+	}
+
 	function formToSpec(fm: Record<string, any>, defs: SpecField[]): Record<string, unknown> {
 		const out: Record<string, unknown> = {};
 		for (const f of defs) {
+			// Skip fields hidden by their showWhen gate (e.g. WG-only fields on a dummy
+			// link) so they never land in the spec and trip the backend's validators.
+			if (f.showWhen && fm[f.showWhen.key] !== f.showWhen.equals) continue;
 			const v = fm[f.key];
 			if (f.type === 'number') {
 				if (v === '' || v == null) continue;
@@ -243,15 +271,16 @@
 </div>
 
 {#if loading && items.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonTable cols={['5rem', '7rem', '4rem', '10rem', '3rem']} />
 {:else if err}
 	<p class="error-text">{err}</p>
-{:else if items.length === 0}
+{:else if items.length === 0 && extraRows.length === 0}
 	<div class="empty">{t('spec.emptyOf', title)}</div>
 {:else}
 	<table>
 		<thead>
 			<tr>
+				{#if statusHeader}<th>{statusHeader}</th>{/if}
 				<th>{t('spec.col.name')}</th>
 				{#if fields.enabled}<th>{t('spec.col.enabled')}</th>{/if}
 				<th>{t('spec.col.details')}</th>
@@ -261,8 +290,22 @@
 		</thead>
 		<tbody>
 			{#each items as it (it.id)}
+				{@const st = statusOf ? statusOf(it) : null}
 				<tr>
-					<td class="mono">{it.name}</td>
+					{#if statusHeader}
+						<td>
+							{#if st}
+								<span class="badge {st.cls}" title={st.title}><span class="dot"></span>{st.label}</span>
+							{:else}
+								<span class="faint">—</span>
+							{/if}
+						</td>
+					{/if}
+					<td>
+						<button class="link-name mono" onclick={() => openEdit(it)} title={t('spec.openHint')}>
+							{it.name}
+						</button>
+					</td>
 					{#if fields.enabled}
 						<td>
 							<span class="badge {it.enabled ? 'ok' : 'unknown'}"
@@ -277,10 +320,22 @@
 					</td>
 					{#if fields.sortOrder}<td class="mono">{it.sort_order ?? 0}</td>{/if}
 					<td class="actions">
-						<button class="btn ghost sm" onclick={() => view(it)}>{t('common.view')}</button>
-						<button class="btn ghost sm" onclick={() => openEdit(it)}>{t('common.edit')}</button>
 						<button class="btn ghost sm danger" onclick={() => del(it)}>{t('common.delete')}</button>
 					</td>
+				</tr>
+			{/each}
+			{#each extraRows as ex (ex.name)}
+				<tr class="observed">
+					{#if statusHeader}
+						<td>
+							<span class="badge {ex.status.cls}" title={ex.status.title}><span class="dot"></span>{ex.status.label}</span>
+						</td>
+					{/if}
+					<td class="mono">{ex.name}</td>
+					{#if fields.enabled}<td></td>{/if}
+					<td class="faint">{#if ex.detail}<span class="tag">{ex.detail}</span>{/if}</td>
+					{#if fields.sortOrder}<td></td>{/if}
+					<td></td>
 				</tr>
 			{/each}
 		</tbody>
@@ -301,12 +356,14 @@
 			{#if fields.peering}
 				<label class="field">
 					<span>{t('spec.peering')}</span>
-					<select bind:value={peeringId}>
-						<option value="">{t('spec.peeringNone')}</option>
-						{#each peerings as p (p.id)}
-							<option value={String(p.id)}>#{p.id} {p.name}</option>
-						{/each}
-					</select>
+					<Select
+						bind:value={peeringId}
+						ariaLabel={t('spec.peering')}
+						options={[
+							{ value: '', label: t('spec.peeringNone') },
+							...peerings.map((p) => ({ value: String(p.id), label: `#${p.id} ${p.name}` }))
+						]}
+					/>
 				</label>
 			{/if}
 		</div>
@@ -315,17 +372,19 @@
 	{#if formFields && !jsonMode}
 		<div class="spec-form">
 			{#each formFields as f (f.key)}
-				{#if f.type === 'group'}
-					<fieldset class="group">
-						<legend>{f.label}</legend>
-						<div class="spec-form">
-							{#each f.fields ?? [] as sf (sf.key)}
-								{@render fieldInput(sf, form[f.key])}
-							{/each}
-						</div>
-					</fieldset>
-				{:else}
-					{@render fieldInput(f, form)}
+				{#if visible(f)}
+					{#if f.type === 'group'}
+						<fieldset class="group">
+							<legend>{f.label}</legend>
+							<div class="spec-form">
+								{#each f.fields ?? [] as sf (sf.key)}
+									{@render fieldInput(sf, form[f.key])}
+								{/each}
+							</div>
+						</fieldset>
+					{:else}
+						{@render fieldInput(f, form)}
+					{/if}
 				{/if}
 			{/each}
 		</div>
@@ -359,9 +418,11 @@
 	{:else if f.type === 'select'}
 		<label class="field">
 			<span>{f.label}</span>
-			<select bind:value={target[f.key]}>
-				{#each f.options ?? [] as o (o)}<option value={o}>{o}</option>{/each}
-			</select>
+			<Select
+				bind:value={target[f.key]}
+				ariaLabel={f.label}
+				options={(f.options ?? []).map((o) => ({ value: o, label: o }))}
+			/>
 		</label>
 	{:else if f.type === 'list'}
 		<label class="field">
@@ -390,12 +451,6 @@
 	{/if}
 {/snippet}
 
-<Modal title={viewing ? viewing.name : ''} bind:open={showView}>
-	{#if viewing}
-		<JsonView value={viewing.spec} max />
-	{/if}
-</Modal>
-
 <style>
 	.spec-form {
 		display: flex;
@@ -420,5 +475,23 @@
 	.advanced-toggle {
 		margin-top: 0.8rem;
 		color: var(--text-dim);
+	}
+	/* observed-only rows (e.g. iBGP) — present in the snapshot, not editable here */
+	tr.observed td {
+		opacity: 0.85;
+	}
+	/* the name doubles as the view/edit affordance — looks like a link */
+	.link-name {
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		color: var(--accent);
+		cursor: pointer;
+		text-align: left;
+		width: auto;
+	}
+	.link-name:hover {
+		text-decoration: underline;
 	}
 </style>

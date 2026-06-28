@@ -7,6 +7,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import type { GenerationDiffOut, GenerationOut } from '$lib/types';
 	import Modal from './../Modal.svelte';
+	import SkeletonTable from './../SkeletonTable.svelte';
 	import JsonView from './../JsonView.svelte';
 
 	let { nodeId, onchange }: { nodeId: string; onchange?: () => void } = $props();
@@ -74,7 +75,10 @@
 </div>
 
 {#if loading && items.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonTable
+		headers={[t('gen.col.gen'), t('gen.col.reason'), t('gen.col.published'), '']}
+		cols={['2.5rem', '12rem', '7rem', '4rem']}
+	/>
 {:else if err}
 	<p class="error-text">{err}</p>
 {:else if items.length === 0}

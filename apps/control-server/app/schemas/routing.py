@@ -108,9 +108,32 @@ class FleetRouting(_Dto):
     nodes: list[FleetRoutingNode]
 
 
+class FleetRoutingTrendPoint(_Dto):
+    """一个时间桶的全机群路由动态:表规模(各节点 route_count 中位数)+ churn。"""
+
+    captured_at: str | None = None
+    size: int = 0
+    announced: int = 0
+    withdrawn: int = 0
+
+
 class OriginEntry(_Dto):
     asn: int
     count: int
+
+
+class FleetRoutingOverview(_Dto):
+    """``GET /ui/routing/fleet-overview``：概览页「路由全表」板块一次取全。
+
+    在 ``FleetRouting`` 的 summary+nodes 之上,附带服务端算好的 ``trend``(路由表规模 +
+    churn 时间线)与 ``origins``(全机群 RIB 的 Top 起源 AS 榜——iBGP 收敛后各节点起源
+    趋同,故 per-ASN 取各节点最大计数代表全机群),省去前端逐节点拉取再聚合。
+    """
+
+    summary: FleetRoutingSummary
+    nodes: list[FleetRoutingNode]
+    trend: list[FleetRoutingTrendPoint] = []
+    origins: list[OriginEntry] = []
 
 
 class RoutingOrigins(_Dto):
@@ -148,6 +171,20 @@ class RoutingTimeline(_Dto):
 
     node_id: str
     events: list[RoutingTimelineEvent]
+
+
+class RoutingDashboard(_Dto):
+    """``GET /admin/nodes/{id}/routing/dashboard``：RoutingTab 头部三件套一次取全。
+
+    把 ``summary`` + ``origins`` + ``timeline`` 聚合进单次请求，取代前端进页 / 每个
+    刷新 tick 各拉一次（3 次跨网往返合 1）。分页 / 过滤的 ``prefixes`` 仍独立——它由
+    筛选条件驱动，不属于头部。
+    """
+
+    node_id: str
+    summary: RoutingSummary
+    origins: RoutingOrigins
+    timeline: RoutingTimeline
 
 
 class IbgpPeerView(_Dto):
@@ -211,12 +248,15 @@ class InternalTopologyView(_Dto):
 __all__ = [
     "FleetRouting",
     "FleetRoutingNode",
+    "FleetRoutingOverview",
     "FleetRoutingSummary",
+    "FleetRoutingTrendPoint",
     "IbgpPeerView",
     "InternalTopologyView",
     "OriginEntry",
     "OspfNeighborView",
     "OspfProtocolView",
+    "RoutingDashboard",
     "RoutingOrigins",
     "RoutingPrefixes",
     "RoutingSummary",

@@ -320,6 +320,59 @@ def test_routing_summary_404_when_never_reported(client: TestClient) -> None:
     assert client.get("/api/v1/admin/nodes/edge1/routing/summary").status_code == 404
 
 
+def test_routing_dashboard_aggregates_head(
+    client: TestClient, config: ControlServerConfig
+) -> None:
+    """/routing/dashboard 一次返回 summary + origins + timeline，与各自单端点一致。"""
+
+    node = config.bootstrap_node_id
+    token = config.bootstrap_agent_token
+    routes = [
+        _route("172.20.0.0/24", 64500, rpki="valid"),
+        _route("172.21.0.0/24", 64500, rpki="not-found"),
+        _route("fd42:1::/48", 64600, as_path=[64600], rpki="invalid"),
+    ]
+    _post_routes(client, node, token, routes, "2025-01-01T00:00:00Z")
+
+    dash = client.get(f"/api/v1/ui/nodes/{node}/routing/dashboard").json()
+    assert dash["node_id"] == node
+    assert dash["summary"]["route_count"] == 3
+    assert dash["origins"]["origins"][0] == {"asn": 64500, "count": 2}
+    assert len(dash["timeline"]["events"]) == 1
+
+    # 与各自单端点逐一对齐（聚合不改变内容）。
+    assert dash["summary"] == client.get(
+        f"/api/v1/admin/nodes/{node}/routing/summary"
+    ).json()
+    assert dash["origins"]["origins"] == client.get(
+        f"/api/v1/admin/nodes/{node}/routing/origins", params={"limit": 15}
+    ).json()["origins"]
+
+
+def test_routing_dashboard_404_when_never_reported(client: TestClient) -> None:
+    assert client.get("/api/v1/ui/nodes/edge1/routing/dashboard").status_code == 404
+
+
+def test_routing_fleet_overview_has_trend(
+    client: TestClient, config: ControlServerConfig
+) -> None:
+    """/routing/fleet-overview 返回 summary + nodes + 服务端聚合的规模/churn 趋势。"""
+
+    node = config.bootstrap_node_id
+    token = config.bootstrap_agent_token
+    _post_routes(
+        client, node, token, [_route("172.20.0.0/24", 64500, rpki="valid")], "2025-01-01T00:00:00Z"
+    )
+    ov = client.get("/api/v1/ui/routing/fleet-overview").json()
+    assert ov["summary"]["route_count"] == 1
+    assert any(n["node_id"] == node for n in ov["nodes"])
+    assert isinstance(ov["trend"], list) and ov["trend"]
+    # fleet origin AS table: the posted route's origin (AS64500) is surfaced
+    assert any(o["asn"] == 64500 for o in ov["origins"])
+    pt = ov["trend"][0]
+    assert pt["size"] == 1 and "captured_at" in pt and "announced" in pt
+
+
 def test_routing_table_rejects_other_node(client: TestClient, config: ControlServerConfig) -> None:
     token = config.bootstrap_agent_token
     r = client.post(

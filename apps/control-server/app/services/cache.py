@@ -66,6 +66,51 @@ class Cache:
         except Exception:  # noqa: BLE001 - 缓存写失败不影响主流程
             logger.debug("cache: set 失败 key=%s", key, exc_info=True)
 
+    async def list_push_capped(
+        self, key: str, value: Any, *, cap: int, ttl_seconds: int | None = None
+    ) -> None:
+        """把 ``value`` 压入列表头并裁到最近 ``cap`` 条（可选 TTL）；失败静默忽略。
+
+        LPUSH + LTRIM + EXPIRE 三步在一个 pipeline 里一次往返，构成「热窗口」：列表始终
+        是最新 ``cap`` 条、最新在头部。供 30s 流量采样的滑动窗口（读时 ``list_range_json``
+        取回再差分）。整段失败退化为无窗口，调用方回落 DB / 快照。
+        """
+
+        if self._client is None:
+            return
+        try:
+            payload = json.dumps(value, separators=(",", ":"), default=str)
+            pipe = self._client.pipeline()
+            pipe.lpush(key, payload)
+            pipe.ltrim(key, 0, cap - 1)
+            if ttl_seconds is not None:
+                pipe.expire(key, ttl_seconds)
+            await pipe.execute()
+        except Exception:  # noqa: BLE001 - 缓存写失败不影响主流程
+            logger.debug("cache: list_push 失败 key=%s", key, exc_info=True)
+
+    async def list_range_json(self, key: str) -> list[Any]:
+        """读列表全部元素并 JSON 解码；未命中 / 不可用 / 异常 → 空列表（调用方回落）。
+
+        与 ``list_push_capped`` 配对：返回的元素顺序即 Redis 列表顺序（最新在头部）。
+        解不出的元素静默跳过——单条坏数据不该拖垮整窗口。
+        """
+
+        if self._client is None:
+            return []
+        try:
+            raw = await self._client.lrange(key, 0, -1)
+        except Exception:  # noqa: BLE001 - 读失败退化为空窗口
+            logger.debug("cache: lrange 失败 key=%s", key, exc_info=True)
+            return []
+        out: list[Any] = []
+        for item in raw or []:
+            try:
+                out.append(json.loads(item))
+            except (ValueError, TypeError):
+                continue
+        return out
+
     async def delete(self, *keys: str) -> None:
         """删键（失效）；失败静默忽略。"""
 

@@ -4,10 +4,13 @@
 	import { fmtTime } from '$lib/format';
 	import { t, locale } from '$lib/i18n.svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import type { StatusEvent } from '$lib/types';
+	import type { StatusEvent, DriftItem } from '$lib/types';
 	import HealthBadge from './../HealthBadge.svelte';
 	import Modal from './../Modal.svelte';
 	import JsonView from './../JsonView.svelte';
+	import DriftCards from './../DriftCards.svelte';
+	import Select from './../Select.svelte';
+	import SkeletonTable from './../SkeletonTable.svelte';
 	import BarChart from './../charts/BarChart.svelte';
 	import { autoRefresh } from '$lib/refresh.svelte';
 
@@ -114,6 +117,12 @@
 		payload = ev.payload;
 		showPayload = true;
 	}
+
+	// A report payload carries payload.drift[]; surface it as cards, JSON as fallback.
+	let driftItems = $derived.by(() => {
+		const d = (payload as { drift?: unknown })?.drift;
+		return Array.isArray(d) ? (d as DriftItem[]) : [];
+	});
 </script>
 
 <div class="card-head">
@@ -126,18 +135,29 @@
 				</button>
 			{/each}
 		</div>
-		<select bind:value={kind} onchange={refresh} style="width:auto">
-			<option value="">{t('status.allKinds')}</option>
-			<option value="snapshot">snapshot</option>
-			<option value="report">report</option>
-			<option value="apply">apply</option>
-		</select>
+		<Select
+			width="auto"
+			value={kind}
+			options={[
+				{ value: '', label: t('status.allKinds') },
+				{ value: 'snapshot', label: 'snapshot' },
+				{ value: 'report', label: 'report' },
+				{ value: 'apply', label: 'apply' }
+			]}
+			onChange={(v) => {
+				kind = v;
+				refresh();
+			}}
+		/>
 		<button class="btn sm icon" onclick={refresh} disabled={loading} aria-label={t('common.refresh')}><Icon name="refresh" size={15} /></button>
 	</div>
 </div>
 
 {#if loading && items.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonTable
+		headers={[t('status.col.kind'), t('status.col.gen'), t('status.col.status'), t('status.col.when'), '']}
+		cols={['5rem', '3rem', '4rem', '7rem', '2rem']}
+	/>
 {:else if err}
 	<p class="error-text">{err}</p>
 {:else if items.length === 0}
@@ -177,7 +197,15 @@
 {/if}
 
 <Modal title={t('status.payloadTitle')} bind:open={showPayload}>
-	<JsonView value={payload} max />
+	{#if driftItems.length}
+		<DriftCards items={driftItems} />
+		<details class="rawjson">
+			<summary>{t('drift.rawJson')}</summary>
+			<JsonView value={payload} max />
+		</details>
+	{:else}
+		<JsonView value={payload} max />
+	{/if}
 </Modal>
 
 <style>
@@ -230,5 +258,23 @@
 		height: 9px;
 		border-radius: 2px;
 		display: inline-block;
+	}
+	.rawjson {
+		margin-top: 0.75rem;
+		border-top: 1px solid var(--border);
+		padding-top: 0.6rem;
+	}
+	.rawjson > summary {
+		cursor: pointer;
+		font-size: 0.8rem;
+		color: var(--text-dim);
+		user-select: none;
+	}
+	.rawjson > summary:hover {
+		color: var(--text);
+	}
+	.rawjson > :global(.json-view),
+	.rawjson > :global(pre) {
+		margin-top: 0.5rem;
 	}
 </style>

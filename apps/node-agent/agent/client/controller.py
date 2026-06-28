@@ -27,6 +27,7 @@ from dn42_schemas import (
     WireGuardKeyReport,
     WireGuardKeyReportResult,
     WireGuardReresolveReport,
+    WireGuardTrafficSample,
 )
 
 from ..core.errors import (
@@ -156,6 +157,20 @@ class ControllerClient:
             content=snapshot.model_dump_json(),
         )
         self._raise_for_status(response, "post_routing_table")
+        return response.json()
+
+    def post_wireguard_traffic(self, sample: WireGuardTrafficSample) -> dict[str, object]:
+        """上报 30s 轻量 WG 流量采样（全 peer 累计收 / 发字节之和，独立于 reconcile）。
+
+        旧控制面无此端点会回 404，调用方按 best-effort 吞掉——采集本身已无副作用。
+        """
+
+        response = self._http.post(
+            "/api/v1/agent/wireguard-traffic",
+            headers=self._auth_headers(),
+            json=sample.model_dump(mode="json"),
+        )
+        self._raise_for_status(response, "post_wireguard_traffic")
         return response.json()
 
     def post_wireguard_reresolve(self, report: WireGuardReresolveReport) -> dict[str, object]:

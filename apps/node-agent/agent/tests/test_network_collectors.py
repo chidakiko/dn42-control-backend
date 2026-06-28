@@ -59,6 +59,32 @@ def test_wireguard_observer_parses_listen_port_and_peer_count() -> None:
     assert by_name["igp-edge2"].peer_count == 0
 
 
+def test_wireguard_observer_parses_peer_tunnel_state() -> None:
+    # 一个握手过的 peer（epoch 1000）+ 一个从未握手的 peer，验证 endpoint / 握手年龄 / 收发。
+    dump = "\n".join(
+        [
+            "\t".join(["wg-hkg1", "PRIV=", "PUB=", "51820", "off"]),
+            "\t".join(
+                ["wg-hkg1", "PEERA=", "(none)", "9.9.9.9:51820", "0.0.0.0/0", "1000", "12345", "67890", "25"]
+            ),
+            "\t".join(["wg-hkg1", "PEERB=", "(none)", "(none)", "::/0", "0", "0", "0", "off"]),
+        ]
+    )
+    interfaces = WireGuardObserver(command_runner=lambda: dump).observe(now=1180.0)
+    assert interfaces is not None
+    iface = interfaces[0]
+    assert iface.peer_count == 2
+    peers = {p.public_key: p for p in iface.peers}
+    a = peers["PEERA="]
+    assert a.endpoint == "9.9.9.9:51820"
+    assert a.last_handshake_seconds == 180  # 1180 - 1000
+    assert a.transfer_rx_bytes == 12345
+    assert a.transfer_tx_bytes == 67890
+    b = peers["PEERB="]
+    assert b.endpoint is None  # "(none)" -> None
+    assert b.last_handshake_seconds is None  # 从未握手
+
+
 def test_wireguard_observer_returns_none_without_runner() -> None:
     # 无 runner = 未采集，返回 None（区别于"采集成功但空"的 []）。
     assert WireGuardObserver().observe() is None

@@ -7,21 +7,18 @@ from __future__ import annotations
 - ``GET /admin/health``：整个 fleet 的健康概览。
 - ``GET /admin/nodes/{node_id}/health``：单节点健康 + 最近一次 snapshot/report/apply。
 - ``GET /admin/nodes/{node_id}/status-events``：单节点上报历史（可按 kind 过滤）。
+
+WebUI 专用的聚合视图（fleet/overview、traffic、links、bgp-sessions/status、overview）
+已挪到 ``/api/v1/ui`` 下（见 ``api/v1/ui/observability.py``）。
 """
 
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from ....schemas.health import (
-    FleetHealth,
-    FleetOverview,
-    NodeHealthDetail,
-    NodeStatusEvents,
-)
-from ....services.desired_state import DesiredStateStore
+from ....schemas.health import FleetHealth, NodeHealthDetail, NodeStatusEvents
 from ....services.node_status import NodeStatusStore
-from ...deps import get_desired_state, get_node_status
+from ...deps import get_node_status
 
 router = APIRouter()
 
@@ -35,63 +32,6 @@ async def fleet_health(
     for node in nodes:
         summary[node["health"]] = summary.get(node["health"], 0) + 1
     return {"summary": summary, "nodes": nodes}
-
-
-@router.get("/fleet/overview", response_model=FleetOverview)
-async def fleet_overview(
-    node_status: NodeStatusStore = Depends(get_node_status),
-    desired: DesiredStateStore = Depends(get_desired_state),
-) -> dict:
-    """一次性聚合 fleet 健康 + 每节点服务能力 + 全网物理 WG 邻接网格(只读)。
-
-    供 Web 仪表盘单次拉取,取代逐节点 N 次调用:
-
-    - ``summary`` / ``nodes`` 与 ``GET /admin/health`` 同源(``NodeStatusStore.list_all``);
-      每个节点行额外挂 ``capabilities``——其 DesiredState ``runtime.services`` 中 ``enabled``
-      的 ``role.value`` 去重排序(无 DesiredState 时空列表)。
-    - ``links`` 由各节点 ``bird.internal_topology.igp_adjacencies`` 折叠成无向去重边:
-      端点按字典序定为 ``a``/``b``,两侧接口名分别填 ``a_iface``/``b_iface``,``cost``
-      取任一侧的非空值。
-    """
-
-    nodes = await node_status.list_all()
-    summary: dict[str, int] = {}
-    edges: dict[tuple[str, str], dict] = {}
-
-    for node in nodes:
-        node_id = node["node_id"]
-        summary[node["health"]] = summary.get(node["health"], 0) + 1
-
-        state = await desired.get(node_id)
-        if state is None:
-            node["capabilities"] = []
-            continue
-
-        node["capabilities"] = sorted(
-            {svc.role.value for svc in state.runtime.services if svc.enabled}
-        )
-
-        topology = state.bird.internal_topology
-        if topology is None:
-            continue
-        for adjacency in topology.igp_adjacencies:
-            peer = adjacency.node
-            if peer == node_id:
-                continue  # 跳过自环
-            a, b = sorted([node_id, peer])
-            edge = edges.setdefault(
-                (a, b),
-                {"a": a, "b": b, "a_iface": None, "b_iface": None, "cost": None},
-            )
-            if node_id == a:
-                edge["a_iface"] = adjacency.interface
-            else:
-                edge["b_iface"] = adjacency.interface
-            if adjacency.cost is not None:
-                edge["cost"] = adjacency.cost
-
-    links = [edges[key] for key in sorted(edges)]
-    return {"summary": summary, "nodes": nodes, "links": links}
 
 
 @router.get("/nodes/{node_id}/health", response_model=NodeHealthDetail)

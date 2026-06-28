@@ -7,7 +7,7 @@
 	import { fmtTime } from '$lib/format';
 	import { t } from '$lib/i18n.svelte';
 	import { autoRefresh } from '$lib/refresh.svelte';
-	import type { NodeOut, PeeringOut, NodeHealthValue } from '$lib/types';
+	import type { NodeOut, PeeringOut, NodeHealthValue, NodeOverview, BgpSessionStatus } from '$lib/types';
 	import HealthBadge from '$lib/components/HealthBadge.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -15,16 +15,23 @@
 	import JsonView from '$lib/components/JsonView.svelte';
 	import PeeringsTab from '$lib/components/node/PeeringsTab.svelte';
 	import PeerWizard from '$lib/components/node/PeerWizard.svelte';
-	import SpecResourceTab, { type SpecField } from '$lib/components/node/SpecResourceTab.svelte';
+	import SpecResourceTab, {
+		type SpecField,
+		type RowStatus,
+		type ObservedRow
+	} from '$lib/components/node/SpecResourceTab.svelte';
 	import GenerationsTab from '$lib/components/node/GenerationsTab.svelte';
 	import StatusEventsTab from '$lib/components/node/StatusEventsTab.svelte';
 	import RoutingTab from '$lib/components/node/RoutingTab.svelte';
 	import NodeDnsTab from '$lib/components/node/NodeDnsTab.svelte';
 	import InternalTopologyTab from '$lib/components/node/InternalTopologyTab.svelte';
+	import LinkTraffic from '$lib/components/node/LinkTraffic.svelte';
 	import AgentTokensTab from '$lib/components/node/AgentTokensTab.svelte';
 	import RouteTuningTab from '$lib/components/node/RouteTuningTab.svelte';
 	import NodeTrends from '$lib/components/node/NodeTrends.svelte';
+	import NodeIssues from '$lib/components/node/NodeIssues.svelte';
 	import NodeSelfMetrics from '$lib/components/node/NodeSelfMetrics.svelte';
+	import SkeletonText from '$lib/components/SkeletonText.svelte';
 
 	let nodeId = $derived(page.params.id ?? '');
 
@@ -32,7 +39,8 @@
 	let loading = $state(true);
 	let error = $state('');
 	let peerings = $state<PeeringOut[]>([]);
-	let health = $state<NodeHealthValue | null>(null);
+	let overview = $state<NodeOverview | null>(null);
+	let health = $derived<NodeHealthValue | null>(overview?.health ?? null);
 	let showWizard = $state(false);
 
 	// "Disconnected" = the control center hasn't heard from the node recently.
@@ -62,8 +70,8 @@
 			key: 'node.grp.connectivity',
 			tabs: [
 				{ id: 'peerings', key: 'node.tab.peerings' },
-				{ id: 'interfaces', key: 'node.tab.interfaces' },
-				{ id: 'bgp', key: 'node.tab.bgp' },
+				{ id: 'links', key: 'node.tab.links' },
+				{ id: 'bgp-sessions', key: 'node.tab.bgpSessions' },
 				{ id: 'internal', key: 'node.tab.internal' }
 			]
 		},
@@ -135,15 +143,66 @@
 		}
 	}
 
-	async function loadHealth() {
+	// One fetch for the whole node page: health + capabilities + self_metrics + drift
+	// + typed link/BGP status. Replaces the old 4× nodeHealth + last_snapshot parsing.
+	async function loadOverview() {
 		try {
-			const h = await api.nodeHealth(nodeId);
-			health = h.health;
+			overview = await api.nodeOverview(nodeId);
 		} catch {
 			// 404 = never reported → leave as unknown (not "disconnected")
-			health = null;
+			overview = null;
 		}
 	}
+
+	// Status columns now consume the typed, server-computed status from /overview —
+	// no last_snapshot parsing, handshake thresholds or scope heuristics in the browser.
+	const ORD: Record<string, number> = { down: 0, stale: 1, up: 2 };
+	const LINK_BADGE: Record<string, string> = { up: 'ok', stale: 'stale', down: 'down' };
+	const BGP_BADGE: Record<string, string> = { up: 'ok', connecting: 'stale', down: 'down' };
+
+	// interface name → worst peer status on that link.
+	let linkStatusByIface = $derived.by(() => {
+		const m = new Map<string, string>();
+		for (const l of overview?.links ?? []) {
+			if (!l.interface) continue;
+			const prev = m.get(l.interface);
+			if (prev === undefined || (ORD[l.status] ?? 9) < (ORD[prev] ?? 9)) m.set(l.interface, l.status);
+		}
+		return m;
+	});
+	const ifaceStatusOf = $derived.by(() => {
+		const m = linkStatusByIface;
+		return (it: { name: string }): RowStatus | null => {
+			const s = m.get(it.name);
+			return s ? { cls: LINK_BADGE[s] ?? 'neutral', label: t(`links.st.${s}`) } : null;
+		};
+	});
+
+	let bgpByName = $derived.by(() => {
+		const m = new Map<string, BgpSessionStatus>();
+		for (const s of overview?.bgp_sessions ?? []) {
+			if (s.name) m.set(s.name, s);
+			if (s.session) m.set(s.session, s);
+		}
+		return m;
+	});
+	const bgpStatusOf = $derived.by(() => {
+		const m = bgpByName;
+		return (it: { name: string }): RowStatus | null => {
+			const s = m.get(it.name);
+			return s ? { cls: BGP_BADGE[s.health] ?? 'neutral', label: s.state ?? '' } : null;
+		};
+	});
+	// Internal iBGP is synthesised (no editable spec) — observed-only rows.
+	const bgpExtraRows = $derived.by((): ObservedRow[] =>
+		(overview?.bgp_sessions ?? [])
+			.filter((s) => s.scope === 'internal')
+			.map((s) => ({
+				name: s.session ?? s.name ?? '',
+				status: { cls: BGP_BADGE[s.health] ?? 'neutral', label: s.state ?? '' },
+				detail: t('bgpsess.scope.internal')
+			}))
+	);
 
 	onMount(loadPeerings);
 
@@ -154,7 +213,7 @@
 		nodeId; // reload when navigating to a different node
 		untrack(() => {
 			loadNode();
-			loadHealth();
+			loadOverview();
 		});
 	});
 
@@ -236,7 +295,7 @@
 			// 409 = server refused because no agent is connected (disconnected node).
 			if (err instanceof ApiError && err.status === 409) {
 				toast.error(t('disc.refused'));
-				await loadHealth();
+				await loadOverview();
 			} else {
 				toast.error(errorMessage(err));
 			}
@@ -279,17 +338,23 @@
 
 	// Structured-form schemas for the spec editor (raw JSON stays available behind
 	// an "advanced" toggle). Keys mirror the *_EXAMPLE shapes above.
+	// Generic link form. Common fields apply to every kind; WG-only fields are gated
+	// by `showWhen: kind=wireguard` so editing a dummy link doesn't surface (or submit)
+	// WireGuard fields the backend would reject.
+	const WG_ONLY = { key: 'kind', equals: 'wireguard' };
 	const IFACE_FIELDS: SpecField[] = [
 		{ key: 'name', label: t('node.f.ifName'), type: 'text', placeholder: 'as4242429001', required: true, mono: true },
-		{ key: 'kind', label: t('node.f.ifKind'), type: 'select', options: ['wireguard'] },
+		{ key: 'kind', label: t('node.f.ifKind'), type: 'select', options: ['wireguard', 'dummy'] },
 		{ key: 'addresses', label: t('node.f.ifAddrs'), type: 'list', placeholder: '198.18.90.2/31' },
 		{ key: 'peer_routes', label: t('node.f.ifPeerRoutes'), type: 'list', placeholder: '198.18.90.1/32' },
-		{ key: 'listen_port', label: t('node.f.ifPort'), type: 'number', placeholder: '38001' },
-		{ key: 'private_key_ref', label: t('node.f.ifKeyRef'), type: 'text', mono: true },
+		{ key: 'mtu', label: t('node.f.ifMtu'), type: 'number', placeholder: '1420' },
+		{ key: 'listen_port', label: t('node.f.ifPort'), type: 'number', placeholder: '38001', showWhen: WG_ONLY },
+		{ key: 'private_key_ref', label: t('node.f.ifKeyRef'), type: 'text', mono: true, showWhen: WG_ONLY },
 		{
 			key: 'wireguard_peer',
 			label: t('node.f.ifWgPeer'),
 			type: 'group',
+			showWhen: WG_ONLY,
 			fields: [
 				{ key: 'public_key', label: t('node.f.ifWgPub'), type: 'text', mono: true },
 				{ key: 'allowed_ips', label: t('node.f.ifWgAllowed'), type: 'list', placeholder: '198.18.90.1/32' }
@@ -342,7 +407,7 @@
 {/if}
 
 {#if loading}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonText lines={6} height="1.3rem" />
 {:else if error}
 	<div class="card"><p class="error-text">{error}</p></div>
 {:else if node}
@@ -373,7 +438,8 @@
 				<h3>{t('node.tab.overview')}</h3>
 			</div>
 			<NodeTrends {nodeId} />
-			<NodeSelfMetrics {nodeId} />
+			<NodeIssues {nodeId} drift={overview?.drift} asOf={overview?.last_report_at} />
+			<NodeSelfMetrics {nodeId} current={overview?.self_metrics ?? null} />
 			<div class="grid">
 				<div><span class="k">{t('node.f.asn')}</span><span class="mono">{node.asn}</span></div>
 				<div><span class="k">{t('node.f.routerId')}</span><span class="mono">{node.router_id}</span></div>
@@ -434,27 +500,33 @@
 			</div>
 		{:else if tab === 'peerings'}
 			<PeeringsTab {nodeId} onchange={loadPeerings} />
-		{:else if tab === 'interfaces'}
+		{:else if tab === 'links'}
+			<LinkTraffic {nodeId} />
 			<SpecResourceTab
-				title={t('node.tab.interfaces')}
-				singular={t('node.tab.interfaces')}
+				title={t('node.tab.links')}
+				singular={t('node.tab.links')}
 				fields={{ enabled: true, sortOrder: true, peering: true }}
 				example={IFACE_EXAMPLE}
 				formFields={IFACE_FIELDS}
 				{peerings}
+				statusHeader={t('links.col.state')}
+				statusOf={ifaceStatusOf}
 				load={() => api.listInterfaces(nodeId)}
 				create={(b) => api.createInterface(nodeId, b)}
 				update={(id, b) => api.updateInterface(id, b)}
 				remove={(id) => api.deleteInterface(id)}
 			/>
-		{:else if tab === 'bgp'}
+		{:else if tab === 'bgp-sessions'}
 			<SpecResourceTab
-				title={t('node.tab.bgp')}
-				singular={t('node.tab.bgp')}
+				title={t('node.tab.bgpSessions')}
+				singular={t('node.tab.bgpSessions')}
 				fields={{ sortOrder: true, peering: true }}
 				example={BGP_EXAMPLE}
 				formFields={BGP_FIELDS}
 				{peerings}
+				statusHeader={t('bgpsess.col.state')}
+				statusOf={bgpStatusOf}
+				extraRows={bgpExtraRows}
 				load={() => api.listSessions(nodeId)}
 				create={(b) => api.createSession(nodeId, b)}
 				update={(id, b) => api.updateSession(id, b)}
@@ -482,7 +554,7 @@
 			{#if desiredErr}
 				<p class="error-text">{desiredErr}</p>
 			{:else if desired === null}
-				<div class="empty">{t('common.loading')}</div>
+				<SkeletonText lines={8} />
 			{:else}
 				<JsonView value={desired} max />
 			{/if}

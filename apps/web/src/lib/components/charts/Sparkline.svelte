@@ -1,11 +1,10 @@
-<script module lang="ts">
-	let uid = 0;
-</script>
-
 <script lang="ts">
-	// Sparkline / area trend: smooth curve, vertical gradient area fill, and an
-	// optional hover readout (guide line + dot + value tooltip). Backwards compatible
-	// with the old polyline props; `smooth` and `interactive` are opt-out / opt-in.
+	// Sparkline / area trend, backed by Chart.js. Same API as the old SVG version:
+	// fixed-size inline line with optional gradient fill, smoothing and hover readout.
+	import ChartCanvas from './ChartCanvas.svelte';
+	import { resolveColor, withAlpha, chartTheme } from './chartjs';
+	import type { ChartConfiguration, Chart as ChartType } from 'chart.js';
+
 	let {
 		values,
 		width = 120,
@@ -28,125 +27,63 @@
 		format?: (v: number) => string;
 	} = $props();
 
-	const gid = `spark-${++uid}`;
-	const pad = 2;
-
-	let geom = $derived.by(() => {
-		const n = values?.length ?? 0;
-		if (n === 0) return { line: '', area: '', pts: [] as { x: number; y: number }[] };
-		const min = Math.min(...values);
-		const max = Math.max(...values);
-		const span = max - min || 1;
-		const x = (i: number) => pad + (i * (width - 2 * pad)) / Math.max(1, n - 1);
-		const y = (v: number) => height - pad - ((v - min) / span) * (height - 2 * pad);
-		const pts = values.map((v, i) => ({ x: x(i), y: y(v) }));
-
-		let line: string;
-		if (smooth && n > 2) {
-			// Catmull-Rom → cubic bezier for a smooth curve.
-			line = `M${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
-			for (let i = 0; i < n - 1; i++) {
-				const p0 = pts[i - 1] ?? pts[i];
-				const p1 = pts[i];
-				const p2 = pts[i + 1];
-				const p3 = pts[i + 2] ?? p2;
-				const c1x = p1.x + (p2.x - p0.x) / 6;
-				const c1y = p1.y + (p2.y - p0.y) / 6;
-				const c2x = p2.x - (p3.x - p1.x) / 6;
-				const c2y = p2.y - (p3.y - p1.y) / 6;
-				line += ` C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+	let config = $derived.by((): ChartConfiguration => {
+		const th = chartTheme();
+		return {
+			type: 'line',
+			data: {
+				labels: values.map((_, i) => i),
+				datasets: [
+					{
+						data: values,
+						borderColor: resolveColor(color),
+						borderWidth: strokeWidth,
+						pointRadius: 0,
+						pointHoverRadius: interactive ? 2.6 : 0,
+						tension: smooth ? 0.4 : 0,
+						fill: fill ? 'origin' : false,
+						backgroundColor: fill
+							? (ctx: { chart: ChartType }) => {
+									const area = ctx.chart.chartArea;
+									if (!area) return 'transparent';
+									const g = ctx.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+									g.addColorStop(0, withAlpha(color, 0.28));
+									g.addColorStop(1, withAlpha(color, 0));
+									return g;
+								}
+							: 'transparent'
+					}
+				]
+			},
+			options: {
+				responsive: false,
+				maintainAspectRatio: false,
+				animation: false,
+				events: interactive ? ['mousemove', 'mouseout', 'touchstart', 'touchmove'] : [],
+				interaction: { mode: 'index', intersect: false },
+				plugins: {
+					legend: { display: false },
+					tooltip: interactive
+						? {
+								backgroundColor: th.tooltipBg,
+								titleColor: th.tooltipText,
+								bodyColor: th.tooltipText,
+								borderColor: th.tooltipBorder,
+								borderWidth: 1,
+								padding: 6,
+								displayColors: false,
+								callbacks: {
+									title: () => '',
+									label: (item) =>
+										format ? format(item.parsed.y ?? 0) : String(item.parsed.y ?? 0)
+								}
+							}
+						: { enabled: false }
+				},
+				scales: { x: { display: false }, y: { display: false } }
 			}
-		} else {
-			line = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-		}
-		const area = `${line} L${pts[n - 1].x.toFixed(1)} ${height} L${pts[0].x.toFixed(1)} ${height} Z`;
-		return { line, area, pts };
+		};
 	});
-
-	let hover = $state<number | null>(null);
-
-	function onMove(e: PointerEvent) {
-		const n = values?.length ?? 0;
-		if (!interactive || n === 0) return;
-		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-		hover = Math.round(ratio * (n - 1));
-	}
-	function fmt(v: number): string {
-		return format ? format(v) : String(v);
-	}
 </script>
 
-<div
-	class="spark-wrap"
-	style="width:{width}px; height:{height}px"
-	onpointermove={onMove}
-	onpointerleave={() => (hover = null)}
-	role="img"
-	aria-label="trend"
->
-	<svg viewBox="0 0 {width} {height}" {width} {height} preserveAspectRatio="none">
-		<defs>
-			<linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-				<stop offset="0" stop-color={color} stop-opacity="0.28" />
-				<stop offset="1" stop-color={color} stop-opacity="0" />
-			</linearGradient>
-		</defs>
-		{#if fill && geom.area}
-			<path d={geom.area} fill="url(#{gid})" />
-		{/if}
-		<path
-			d={geom.line}
-			fill="none"
-			stroke={color}
-			stroke-width={strokeWidth}
-			stroke-linejoin="round"
-			stroke-linecap="round"
-			vector-effect="non-scaling-stroke"
-		/>
-		{#if interactive && hover != null && geom.pts[hover]}
-			<line
-				x1={geom.pts[hover].x}
-				y1="0"
-				x2={geom.pts[hover].x}
-				y2={height}
-				stroke={color}
-				stroke-width="1"
-				opacity="0.35"
-				vector-effect="non-scaling-stroke"
-			/>
-			<circle cx={geom.pts[hover].x} cy={geom.pts[hover].y} r="2.6" fill={color} vector-effect="non-scaling-stroke" />
-		{/if}
-	</svg>
-	{#if interactive && hover != null && values[hover] != null}
-		<span
-			class="spark-tip"
-			style="left:{(geom.pts[hover].x / width) * 100}%"
-		>{fmt(values[hover])}</span>
-	{/if}
-</div>
-
-<style>
-	.spark-wrap {
-		position: relative;
-		display: block;
-	}
-	.spark-wrap svg {
-		display: block;
-	}
-	.spark-tip {
-		position: absolute;
-		top: -0.2rem;
-		transform: translate(-50%, -100%);
-		background: var(--text);
-		color: var(--bg-elev);
-		font-size: 0.7rem;
-		font-variant-numeric: tabular-nums;
-		font-weight: 600;
-		padding: 0.1rem 0.4rem;
-		border-radius: var(--radius-sm);
-		white-space: nowrap;
-		pointer-events: none;
-		box-shadow: var(--shadow);
-	}
-</style>
+<ChartCanvas {config} {width} {height} fixed label="trend" />

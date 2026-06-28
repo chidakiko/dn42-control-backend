@@ -13,9 +13,15 @@ from __future__ import annotations
 - ``list``（可能为空）：采集成功，结果权威，空列表即"真的没有"。
 """
 
+import time
 from typing import Callable
 
-from dn42_schemas import ObservedBgpProtocol, ObservedWireGuardInterface, RuntimeResourceStatus
+from dn42_schemas import (
+    ObservedBgpProtocol,
+    ObservedWireGuardInterface,
+    ObservedWireGuardPeer,
+    RuntimeResourceStatus,
+)
 
 # runner 返回 None 表示采集失败；空串表示成功但无输出。
 CommandRunner = Callable[[], "str | None"]
@@ -29,28 +35,31 @@ def _safe_int(value: str) -> int | None:
 
 
 class WireGuardObserver:
-    """解析 `wg show all dump` 输出为 ObservedWireGuardInterface 列表。
+    """解析 `wg show all dump` 输出为 ObservedWireGuardInterface 列表（含 per-peer 隧道状态）。
 
     dump 格式按接口分组：每个接口的第一行 5 列
     （interface / private-key / public-key / listen-port / fwmark），其后每个 peer
-    一行 9 列。我们只取跨发行版稳定的三件事：接口名 / 监听端口 / peer 数量。
+    一行 9 列（interface / public-key / preshared-key / endpoint / allowed-ips /
+    latest-handshake / transfer-rx / transfer-tx / persistent-keepalive）。接口名 /
+    监听端口 / peer 数量是跨发行版稳定的；peer 行进一步取 endpoint / 最近握手 / 收发
+    字节，构成隧道存活监控的原始事实（up/stale/down 判定留给消费端）。
     """
 
     def __init__(self, command_runner: CommandRunner | None = None) -> None:
         self._command_runner = command_runner
 
-    def observe(self) -> list[ObservedWireGuardInterface] | None:
+    def observe(self, *, now: float | None = None) -> list[ObservedWireGuardInterface] | None:
         if self._command_runner is None:
             return None
         output = self._command_runner()
         if output is None:
             return None
-        return self._parse(output)
+        return self._parse(output, now=time.time() if now is None else now)
 
     @staticmethod
-    def _parse(output: str) -> list[ObservedWireGuardInterface]:
+    def _parse(output: str, *, now: float) -> list[ObservedWireGuardInterface]:
         listen_ports: dict[str, int | None] = {}
-        peer_counts: dict[str, int] = {}
+        peers: dict[str, list[ObservedWireGuardPeer]] = {}
         order: list[str] = []
         for raw in output.splitlines():
             line = raw.rstrip("\n")
@@ -63,25 +72,44 @@ class WireGuardObserver:
             if interface not in listen_ports:
                 order.append(interface)
                 listen_ports[interface] = None
-                peer_counts[interface] = 0
+                peers[interface] = []
             if len(fields) == 5:
                 # 接口自身行：interface privkey pubkey listen-port fwmark
                 port = _safe_int(fields[3].strip())
                 # wg dump 用 0 表示未设置监听端口；schema 要求 >=1，归一为 None。
                 listen_ports[interface] = port if port else None
-            else:
-                # peer 行
-                peer_counts[interface] += 1
+            elif len(fields) >= 8:
+                # peer 行：iface pubkey psk endpoint allowed-ips handshake rx tx [keepalive]
+                peers[interface].append(WireGuardObserver._parse_peer(fields, now=now))
 
         return [
             ObservedWireGuardInterface(
                 name=name,
                 listen_port=listen_ports[name],
-                peer_count=peer_counts[name],
+                peer_count=len(peers[name]),
                 status=RuntimeResourceStatus.RUNNING,
+                peers=peers[name],
             )
             for name in order
         ]
+
+    @staticmethod
+    def _parse_peer(fields: list[str], *, now: float) -> ObservedWireGuardPeer:
+        endpoint = fields[3].strip()
+        handshake_epoch = _safe_int(fields[5].strip())
+        # latest-handshake=0 表示从未握手；否则用采集时刻减去握手时间得"距今秒数"（不为负）。
+        age = (
+            max(0, int(now) - handshake_epoch)
+            if handshake_epoch is not None and handshake_epoch > 0
+            else None
+        )
+        return ObservedWireGuardPeer(
+            public_key=fields[1].strip(),
+            endpoint=None if endpoint in ("", "(none)") else endpoint,
+            last_handshake_seconds=age,
+            transfer_rx_bytes=_safe_int(fields[6].strip()) or 0,
+            transfer_tx_bytes=_safe_int(fields[7].strip()) or 0,
+        )
 
 
 class BgpObserver:

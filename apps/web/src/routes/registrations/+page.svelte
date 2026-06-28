@@ -6,6 +6,8 @@
 	import { t } from '$lib/i18n.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Select from '$lib/components/Select.svelte';
+	import SkeletonTable from '$lib/components/SkeletonTable.svelte';
 	import type { Registration } from '$lib/types';
 	import Modal from '$lib/components/Modal.svelte';
 	import JsonView from '$lib/components/JsonView.svelte';
@@ -64,12 +66,17 @@
 		<p class="ph-sub">{t('reg.subtitle')}</p>
 	</div>
 	<div class="ph-actions">
-		<select bind:value={filter} onchange={load} style="width:auto">
-			<option value="">{t('reg.all')}</option>
-			<option value="pending">{t('reg.pending')}</option>
-			<option value="approved">{t('reg.approved')}</option>
-			<option value="rejected">{t('reg.rejected')}</option>
-		</select>
+		<Select
+			width="auto"
+			bind:value={filter}
+			options={[
+				{ value: '', label: t('reg.all') },
+				{ value: 'pending', label: t('reg.pending') },
+				{ value: 'approved', label: t('reg.approved') },
+				{ value: 'rejected', label: t('reg.rejected') }
+			]}
+			onChange={() => load()}
+		/>
 		<button class="btn sm" onclick={load} disabled={loading}>
 			<Icon name="refresh" size={15} />{t('common.refresh')}
 		</button>
@@ -79,7 +86,12 @@
 <p class="faint" style="font-size:0.8rem; margin-top:-0.75rem">{t('reg.note')}</p>
 
 {#if loading && items.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<div class="card" style="padding:0">
+		<SkeletonTable
+			headers={[t('reg.col.id'), t('reg.col.node'), t('reg.col.status'), t('reg.col.created'), '']}
+			cols={['6rem', '6rem', '4rem', '7rem', '3rem']}
+		/>
+	</div>
 {:else if error}
 	<div class="card"><p class="error-text">{error}</p></div>
 {:else}

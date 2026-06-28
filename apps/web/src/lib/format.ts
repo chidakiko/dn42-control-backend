@@ -45,3 +45,30 @@ export function relTime(value: string | null | undefined): string {
 	const days = Math.floor(hrs / 24);
 	return t.d(days);
 }
+
+// Humanise a duration given in seconds (e.g. a WG handshake age) using the same
+// relative-time vocabulary as relTime. null/undefined → '—'.
+export function fmtDurationSecs(secs: number | null | undefined): string {
+	if (secs === null || secs === undefined) return '—';
+	const t = locale.dict.rel;
+	if (secs < 60) return t.s(Math.round(secs));
+	const mins = Math.floor(secs / 60);
+	if (mins < 60) return t.m(mins);
+	const hrs = Math.floor(mins / 60);
+	if (hrs < 24) return t.h(hrs);
+	return t.d(Math.floor(hrs / 24));
+}
+
+// Humanise a byte count to B/KB/MB/GB/… (1024-based). null/undefined → '—'.
+export function fmtBytes(n: number | null | undefined): string {
+	if (n === null || n === undefined) return '—';
+	if (n < 1024) return `${n} B`;
+	const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+	let v = n / 1024;
+	let i = 0;
+	while (v >= 1024 && i < units.length - 1) {
+		v /= 1024;
+		i++;
+	}
+	return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
+}

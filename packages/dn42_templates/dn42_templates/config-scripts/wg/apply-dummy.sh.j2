@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 多条路径可能并发应用同一 netns（reconcile 收敛 / l3_heal 运行时自愈 / 手动），文件锁
+# 把单接口应用串行化，避免 ``ip link add`` 的 check-then-create 竞态（并发下两进程都过了
+# show 检查、都 add，一个 "File exists" 让 set -e 中途退出、半应用）。聚合入口
+# apply-all-wg.sh 不持锁、只逐个调本脚本，故无自死锁。
+mkdir -p /run/dn42-control 2>/dev/null || true
+exec 9>/run/dn42-control/wg-apply.lock
+flock 9
+
 IF="{{ interface_name }}"
 echo "[dummy] applying ${IF}"
-ip link show "${IF}" >/dev/null 2>&1 || ip link add dev "${IF}" type dummy
+# 幂等抗并发：已存在（并发创建 / 重入）即忽略，随后 show 兜底——确实没建出来才让 set -e 失败。
+ip link add dev "${IF}" type dummy 2>/dev/null || true
+ip link show "${IF}" >/dev/null 2>&1
 ip link set "${IF}" up
 {% for command in address_commands %}
 {{ command }}

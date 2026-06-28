@@ -92,7 +92,7 @@ def test_internal_topology_endpoint_and_liveness(
     node = config.bootstrap_node_id  # edge1，seed 自带 internal_topology
     token = config.bootstrap_agent_token
 
-    view = client.get(f"/api/v1/admin/nodes/{node}/internal-topology")
+    view = client.get(f"/api/v1/ui/nodes/{node}/internal-topology")
     assert view.status_code == 200, view.text
     body = view.json()
     assert body["configured"] is True
@@ -128,7 +128,7 @@ def test_internal_topology_endpoint_and_liveness(
     )
     assert posted.status_code == 200, posted.text
 
-    body2 = client.get(f"/api/v1/admin/nodes/{node}/internal-topology").json()
+    body2 = client.get(f"/api/v1/ui/nodes/{node}/internal-topology").json()
     assert body2["routing_observed"] is True
     peers2 = {p["node"]: p for p in body2["ibgp_peers"]}
     assert peers2["edge2"]["in_rib"] is True
@@ -136,5 +136,5 @@ def test_internal_topology_endpoint_and_liveness(
 
 
 def test_internal_topology_404_for_unknown_node(client: TestClient) -> None:
-    r = client.get("/api/v1/admin/nodes/does-not-exist/internal-topology")
+    r = client.get("/api/v1/ui/nodes/does-not-exist/internal-topology")
     assert r.status_code == 404

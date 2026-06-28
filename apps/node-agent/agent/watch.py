@@ -35,7 +35,9 @@ from .metrics import record_reconcile, record_self_observation
 from .observability import CpuSampler, current_rss_mb, warn_if_slow
 from .orchestrator import OrchestratorResult, run_once
 from .reresolve import reresolve_and_report
+from .l3_heal import heal_l3_drift, HealCircuit
 from .routing import collect_and_publish_routing
+from .traffic import collect_and_publish_traffic
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +251,7 @@ async def run_watch(
     fallback_interval: float = 300.0,
     debounce_seconds: float = 0.3,
     routing_interval: float | None = None,
+    traffic_interval: float | None = None,
     reresolve_interval: float | None = None,
     stop_event: asyncio.Event | None = None,
 ) -> None:
@@ -267,6 +270,9 @@ async def run_watch(
         routing_interval: 路由全表周期采集间隔秒数；``None`` 取配置值，``<=0``
             关闭。仅在默认 reconcile（拥有共享 Adapters）时启用——它是独立于
             reconcile 的纯观测任务，绝不触碰收敛路径。
+        traffic_interval: WG 流量 30s 轻量采集间隔秒数；``None`` 取配置值，``<=0``
+            关闭。同为独立旁路观测任务（只跑 ``wg show all transfer`` 求和上报），
+            仅在默认 reconcile（持有共享 Adapters）时启用。
         reresolve_interval: WG endpoint 周期重解析间隔秒数；``None`` 取配置值，
             ``<=0`` 关闭。同样仅在默认 reconcile（持有共享 Adapters）时启用——
             它是独立于 reconcile 的自愈任务，只在握手超时时 ``wg set`` 重设 endpoint。
@@ -337,6 +343,22 @@ async def run_watch(
             name="dn42-agent-routing",
         )
 
+    # WG 流量 30s 轻量采集同为独立旁路任务：只有默认 reconcile（持有共享 Adapters）时启用。
+    effective_traffic_interval = (
+        traffic_interval if traffic_interval is not None else config.traffic_interval_seconds
+    )
+    traffic_task: asyncio.Task[None] | None = None
+    if adapters is not None and effective_traffic_interval > 0:
+        traffic_task = asyncio.create_task(
+            _traffic_loop(
+                config=config,
+                adapters=adapters,
+                interval=effective_traffic_interval,
+                stop=stop,
+            ),
+            name="dn42-agent-traffic",
+        )
+
     # WG endpoint 重解析同为独立旁路任务：只有默认 reconcile（持有共享 Adapters）时启用。
     effective_reresolve_interval = (
         reresolve_interval if reresolve_interval is not None else config.reresolve_interval_seconds
@@ -351,6 +373,19 @@ async def run_watch(
                 stop=stop,
             ),
             name="dn42-agent-reresolve",
+        )
+
+    # L3 漂移自愈同为独立旁路任务：周期比对期望接口 vs netns 实况，缺失即重 apply 补齐。
+    l3_heal_task: asyncio.Task[None] | None = None
+    if adapters is not None and config.l3_heal_interval_seconds > 0:
+        l3_heal_task = asyncio.create_task(
+            _l3_heal_loop(
+                config=config,
+                adapters=adapters,
+                interval=config.l3_heal_interval_seconds,
+                stop=stop,
+            ),
+            name="dn42-agent-l3-heal",
         )
 
     # 进程自观测（CPU/RSS + 高 CPU 告警）：纯本地、不依赖 adapters，但同样仅在常驻
@@ -379,8 +414,12 @@ async def run_watch(
         client_task.cancel()
         if routing_task is not None:
             routing_task.cancel()
+        if traffic_task is not None:
+            traffic_task.cancel()
         if reresolve_task is not None:
             reresolve_task.cancel()
+        if l3_heal_task is not None:
+            l3_heal_task.cancel()
         if self_monitor_task is not None:
             self_monitor_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -388,9 +427,15 @@ async def run_watch(
         if routing_task is not None:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await routing_task
+        if traffic_task is not None:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await traffic_task
         if reresolve_task is not None:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await reresolve_task
+        if l3_heal_task is not None:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await l3_heal_task
         if self_monitor_task is not None:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self_monitor_task
@@ -614,6 +659,43 @@ async def _routing_loop(
         await _sleep_or_stop(stop, interval)
 
 
+async def _traffic_loop(
+    *,
+    config: AgentConfig,
+    adapters: Adapters,
+    interval: float,
+    stop: asyncio.Event,
+) -> None:
+    """周期采集并上报 WG 流量累计计数（30s 轻量），直到 ``stop`` 被设置。
+
+    与 consumer 的 reconcile 完全隔离：只跑一次 ``wg show all transfer`` 求和 + Session
+    HTTP 上报，绝不触发 apply。node_id 每轮重解析——首次注册完成前解析不到时跳过本轮。
+    单次失败只记日志，循环继续。启动 grace 较短：让吞吐曲线重启后很快出首帧。
+    """
+
+    loop = asyncio.get_running_loop()
+
+    async def _collect_once() -> None:
+        node_id = resolve_node_id(config)
+        if node_id is None:
+            logger.debug("traffic: 尚不能确定 node_id，跳过本轮流量采集")
+            return
+        started = time.monotonic()
+        try:
+            await loop.run_in_executor(
+                None, collect_and_publish_traffic, config, adapters, node_id
+            )
+        except Exception:  # noqa: BLE001 - 流量采集是旁路观测，绝不拖垮守护进程
+            logger.warning("traffic: WG 流量采集/上报失败", exc_info=True)
+            return
+        warn_if_slow("traffic-collect", time.monotonic() - started, interval)
+
+    await _sleep_or_stop(stop, min(interval, 10.0))
+    while not stop.is_set():
+        await _collect_once()
+        await _sleep_or_stop(stop, interval)
+
+
 async def _reresolve_loop(
     *,
     config: AgentConfig,
@@ -652,6 +734,56 @@ async def _reresolve_loop(
     while not stop.is_set():
         await _reresolve_once()
         await _sleep_or_stop(stop, interval)
+
+
+async def _l3_heal_loop(
+    *,
+    config: AgentConfig,
+    adapters: Adapters,
+    interval: float,
+    stop: asyncio.Event,
+) -> None:
+    """周期比对期望接口 vs netns 实际存在的接口，缺失即重跑 apply-all-wg 补齐，直到 ``stop``。
+
+    与 consumer 的 reconcile 完全隔离的运行时纠偏：``ip -br link`` 探测 + ``apply-all-wg``
+    幂等重放，从不重建容器、不触碰 ``applied_generation``。node_id 每轮重解析；单次失败
+    只记日志、循环继续。启动 grace 给首次 reconcile 落盘 desired-state + 拉起 wg 容器的窗口。
+    """
+
+    loop = asyncio.get_running_loop()
+    circuit = HealCircuit(interval)
+
+    async def _heal_once() -> bool:
+        """返回 ``False`` 仅当「检测到漂移但没补好」（触发退避/熔断）；其余
+        （补好 / 无漂移 / 探针不可达 / 身份未就绪）均视作成功，不计失败。"""
+
+        node_id = resolve_node_id(config)
+        if node_id is None:
+            logger.debug("l3-heal: 尚不能确定 node_id，跳过本轮")
+            return True
+        started = time.monotonic()
+        try:
+            result = await loop.run_in_executor(None, heal_l3_drift, config, adapters, node_id)
+        except Exception:  # noqa: BLE001 - 自愈是旁路，绝不拖垮守护进程
+            logger.warning("l3-heal: 本轮自愈失败", exc_info=True)
+            return False
+        warn_if_slow("l3-heal", time.monotonic() - started, interval)
+        if result is None:
+            return True  # 无漂移 / 探针不可达 —— 非失败
+        return bool(result.get("healed"))
+
+    await _sleep_or_stop(stop, min(interval, 15.0))
+    while not stop.is_set():
+        signal = circuit.record(await _heal_once())
+        if signal == "escalate":
+            logger.error(
+                "l3-heal: 连续 %d 次补救失败，熔断——改长间隔半开重试；疑似底层故障"
+                "（接口被持续删除 / apply 一直失败），需人工介入",
+                circuit.failures,
+            )
+        elif signal == "recovered":
+            logger.info("l3-heal: 补救恢复，熔断复位")
+        await _sleep_or_stop(stop, circuit.backoff())
 
 
 async def _wake_or_stop(bell: _Doorbell, stop: asyncio.Event) -> None:

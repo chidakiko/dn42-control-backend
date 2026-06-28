@@ -55,7 +55,37 @@ def test_non_bird_renderers_use_independent_template_families() -> None:
     assert "FROM debian:13-slim" in dockerfile
     assert "PublicKey = +aFW7xRRTwOZ6w0EmrvqN4ng2QcFA0/9Wdu9GkdwJgQ=" in wg_config
     assert "/opt/dn42/scripts/wg/apply-as4242420001.sh" in wg_script
+    # dn42-lo 不再靠模板硬编码、改由 interface_scripts 收录——确保仍在自启列表里。
+    assert "/opt/dn42/scripts/wg/apply-dn42-lo.sh" in wg_script
     assert "example.dn42:53" in corefile
+
+
+def test_apply_all_wg_covers_every_managed_dummy_for_self_healing_restart() -> None:
+    """apply-all-wg（wg-gateway 自启脚本）必须涵盖**所有** dummy（dn42-lo 身份地址 +
+    dns-anycast 任播地址）与 WireGuard 接口,dummy 排在前。
+
+    回归 2026-06-26 事故:dns-anycast 不在自启脚本里、只归 agent convergence,外部
+    ``docker restart`` 不触发 convergence → 重建 netns 后 dns-anycast 漏建 → bird 启动
+    脚本死等该接口、永不启动,CoreDNS 也绑不上任播地址崩溃循环。
+    """
+
+    state = build_hkg1_example_state()
+    # example 自带 dn42-lo（身份）与 dns-anycast（任播）两个 dummy。
+    dummy_names = {
+        interface.name
+        for interface in state.interfaces
+        if interface.kind == InterfaceKind.DUMMY
+    }
+    assert {"dn42-lo", "dns-anycast"} <= dummy_names
+
+    script = render_apply_all_wg_script(state)
+
+    assert "/opt/dn42/scripts/wg/apply-dn42-lo.sh" in script
+    assert "/opt/dn42/scripts/wg/apply-dns-anycast.sh" in script
+    assert script.count("apply-dns-anycast.sh") == 1  # 不重复
+    assert "/opt/dn42/scripts/wg/apply-as4242420001.sh" in script
+    # dummy（dns-anycast）必须在 WireGuard 接口之前应用。
+    assert script.index("apply-dns-anycast.sh") < script.index("apply-as4242420001.sh")
 
 
 def test_wireguard_apply_script_matches_peer_route_per_address() -> None:

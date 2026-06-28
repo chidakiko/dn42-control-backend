@@ -9,6 +9,7 @@
 	import type { EnrollmentTokenOut } from '$lib/types';
 	import Modal from '$lib/components/Modal.svelte';
 	import SecretReveal from '$lib/components/SecretReveal.svelte';
+	import SkeletonTable from '$lib/components/SkeletonTable.svelte';
 
 	let items = $state<EnrollmentTokenOut[]>([]);
 	let loading = $state(true);
@@ -88,7 +89,20 @@
 </div>
 
 {#if loading && items.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<div class="card" style="padding:0">
+		<SkeletonTable
+			headers={[
+				t('enr.col.id'),
+				t('enr.col.node'),
+				t('enr.col.desc'),
+				t('enr.col.state'),
+				t('enr.col.expires'),
+				t('enr.col.created'),
+				''
+			]}
+			cols={['7rem', '5rem', '8rem', '4rem', '6rem', '6rem', '3rem']}
+		/>
+	</div>
 {:else if error}
 	<div class="card"><p class="error-text">{error}</p></div>
 {:else}

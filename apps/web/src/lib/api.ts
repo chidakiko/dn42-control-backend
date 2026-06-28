@@ -16,7 +16,12 @@ import type {
 	EnrollmentTokenOut,
 	FleetHealth,
 	FleetOverview,
-	FleetRouting,
+	FleetRoutingOverview,
+	FleetTraffic,
+	NodeTraffic,
+	NodeLinks,
+	NodeBgpSessions,
+	NodeOverview,
 	GenerationDetailOut,
 	GenerationDiffOut,
 	GenerationOut,
@@ -32,10 +37,8 @@ import type {
 	PeeringOut,
 	ProvisionOut,
 	Registration,
-	RoutingOrigins,
+	RoutingDashboard,
 	RoutingPrefixes,
-	RoutingSummary,
-	RoutingTimeline,
 	SessionOut
 } from './types';
 
@@ -132,9 +135,8 @@ export const api = {
 	patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
 	del: (path: string) => request<void>('DELETE', path),
 
-	// --- Health / fleet ---
+	// --- Health / fleet (general admin reads) ---
 	fleetHealth: () => request<FleetHealth>('GET', '/api/v1/admin/health'),
-	fleetOverview: () => request<FleetOverview>('GET', '/api/v1/admin/fleet/overview'),
 	nodeHealth: (id: string) =>
 		request<NodeHealthDetail>('GET', `/api/v1/admin/nodes/${enc(id)}/health`),
 	statusEvents: (id: string, kind?: string, limit = 50) =>
@@ -144,15 +146,30 @@ export const api = {
 				(kind ? `&kind=${kind}` : '')
 		),
 
-	// --- Routing table (full-table analysis) ---
-	routingFleet: () => request<FleetRouting>('GET', '/api/v1/admin/routing/fleet'),
-	routingSummary: (id: string) =>
-		request<RoutingSummary>('GET', `/api/v1/admin/nodes/${enc(id)}/routing/summary`),
-	routingOrigins: (id: string, limit = 50) =>
-		request<RoutingOrigins>(
+	// --- WebUI-specific BFF / aggregation endpoints (/api/v1/ui, server pre-computes) ---
+	fleetOverview: () => request<FleetOverview>('GET', '/api/v1/ui/fleet/overview'),
+	fleetTraffic: (limit = 120) =>
+		request<FleetTraffic>('GET', `/api/v1/ui/fleet/traffic?limit=${limit}`),
+	nodeTraffic: (id: string, limit = 120) =>
+		request<NodeTraffic>('GET', `/api/v1/ui/nodes/${enc(id)}/traffic?limit=${limit}`),
+	nodeLinks: (id: string) =>
+		request<NodeLinks>('GET', `/api/v1/ui/nodes/${enc(id)}/links`),
+	nodeBgpSessions: (id: string) =>
+		request<NodeBgpSessions>('GET', `/api/v1/ui/nodes/${enc(id)}/bgp-sessions/status`),
+	nodeOverview: (id: string) =>
+		request<NodeOverview>('GET', `/api/v1/ui/nodes/${enc(id)}/overview`),
+	// Dashboard routing board: summary + nodes + server-aggregated trend.
+	routingFleetOverview: () =>
+		request<FleetRoutingOverview>('GET', '/api/v1/ui/routing/fleet-overview'),
+	// RoutingTab 头部一次取全（summary + origins + timeline），取代 3 次跨网往返。
+	routingDashboard: (id: string, originsLimit = 15, timelineLimit = 200) =>
+		request<RoutingDashboard>(
 			'GET',
-			`/api/v1/admin/nodes/${enc(id)}/routing/origins?limit=${limit}`
+			`/api/v1/ui/nodes/${enc(id)}/routing/dashboard` +
+				`?origins_limit=${originsLimit}&timeline_limit=${timelineLimit}`
 		),
+
+	// --- Routing table (general full-table analysis, admin) ---
 	routingPrefixes: (
 		id: string,
 		opts: {
@@ -174,18 +191,13 @@ export const api = {
 			`/api/v1/admin/nodes/${enc(id)}/routing/prefixes?${p.toString()}`
 		);
 	},
-	routingTimeline: (id: string, limit = 200) =>
-		request<RoutingTimeline>(
-			'GET',
-			`/api/v1/admin/nodes/${enc(id)}/routing/timeline?limit=${limit}`
-		),
 
 	// iBGP + OSPF internal interconnect (not bgp_sessions records — synthesised
 	// from bird.internal_topology; correlated with routing peers for liveness).
 	nodeInternalTopology: (id: string) =>
 		request<InternalTopologyView>(
 			'GET',
-			`/api/v1/admin/nodes/${enc(id)}/internal-topology`
+			`/api/v1/ui/nodes/${enc(id)}/internal-topology`
 		),
 
 	// --- Nodes ---

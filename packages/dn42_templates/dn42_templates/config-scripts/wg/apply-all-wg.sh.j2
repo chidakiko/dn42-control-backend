@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-/opt/dn42/scripts/wg/apply-dn42-lo.sh
+# 受管接口脚本：dummy（dn42-lo / dns-anycast …）在前，WireGuard 在后。容器自启即
+# 把 netns 的 L3 全量补齐，使任何重启都能自愈，不依赖 agent convergence（见
+# dn42_templates.scripts.render_apply_all_wg_script）。
 {% for script in interface_scripts %}
 {{ script }}
 {% endfor %}
 
-echo "[done] WireGuard links applied"
+echo "[done] managed interfaces applied"
 wg show

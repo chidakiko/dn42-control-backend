@@ -1,5 +1,10 @@
 <script lang="ts">
+	// Thin wrapper over Bits UI's headless Dialog: keeps the project's card styling
+	// and the original public API ({ title, open (bindable), onclose, children, footer }),
+	// but delegates focus-trap / scroll-lock / ESC / aria to the accessible primitive
+	// instead of hand-rolling them. Consumers are unchanged.
 	import type { Snippet } from 'svelte';
+	import { Dialog } from 'bits-ui';
 
 	let {
 		title,
@@ -14,62 +19,54 @@
 		children: Snippet;
 		footer?: Snippet;
 	} = $props();
-
-	function close() {
-		open = false;
-		onclose?.();
-	}
-
-	function onkeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') close();
-	}
 </script>
 
-<svelte:window on:keydown={onkeydown} />
-
-{#if open}
-	<div
-		class="backdrop"
-		role="button"
-		tabindex="-1"
-		onclick={(e) => {
-			if (e.target === e.currentTarget) close();
-		}}
-		onkeydown={() => {}}
-	>
-		<div class="dialog card" role="dialog" aria-modal="true" aria-label={title}>
-			<div class="card-head">
-				<h2>{title}</h2>
-				<button class="btn ghost sm" onclick={close} aria-label="Close">×</button>
-			</div>
-			<div class="body">
-				{@render children()}
-			</div>
-			{#if footer}
-				<div class="foot">
-					{@render footer()}
-				</div>
-			{/if}
+<Dialog.Root
+	bind:open
+	onOpenChange={(v) => {
+		if (!v) onclose?.();
+	}}
+>
+	<Dialog.Overlay class="modal-backdrop" />
+	<Dialog.Content class="modal-dialog card" aria-label={title}>
+		<div class="card-head">
+			<Dialog.Title>
+				{#snippet child({ props })}<h2 {...props}>{title}</h2>{/snippet}
+			</Dialog.Title>
+			<Dialog.Close aria-label="Close">
+				{#snippet child({ props })}<button {...props} class="btn ghost sm">×</button>{/snippet}
+			</Dialog.Close>
 		</div>
-	</div>
-{/if}
+		<div class="body">
+			{@render children()}
+		</div>
+		{#if footer}
+			<div class="foot">
+				{@render footer()}
+			</div>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>
 
 <style>
-	.backdrop {
+	/* Bits UI keeps Overlay + Content as siblings; :global because the dialog may be
+	   portaled out of this component's scope. Styling/look matches the old Modal. */
+	:global(.modal-backdrop) {
 		position: fixed;
 		inset: 0;
 		background: rgba(0, 0, 0, 0.6);
-		display: flex;
-		align-items: flex-start;
-		justify-content: center;
-		padding: 4vh 1rem;
 		z-index: 500;
-		overflow-y: auto;
 	}
-	.dialog {
-		width: 100%;
+	:global(.modal-dialog) {
+		position: fixed;
+		left: 50%;
+		top: 4vh;
+		transform: translateX(-50%);
+		width: calc(100% - 2rem);
 		max-width: 640px;
-		margin: auto 0;
+		max-height: 92vh;
+		overflow-y: auto;
+		z-index: 501;
 	}
 	.body {
 		max-height: 70vh;

@@ -12,9 +12,16 @@
 	import { fade } from 'svelte/transition';
 	import type { AgentSelfMetrics, StatusEvent } from '$lib/types';
 
-	let { nodeId }: { nodeId: string } = $props();
+	// `current` may be piped from the parent's /overview fetch; if omitted we
+	// self-fetch nodeHealth. The sparkline history always comes from status-events.
+	let {
+		nodeId,
+		current: pipedCurrent
+	}: { nodeId: string; current?: AgentSelfMetrics | null } = $props();
 
-	let current = $state<AgentSelfMetrics | null>(null);
+	let usePiped = $derived(pipedCurrent !== undefined);
+	let fetchedCurrent = $state<AgentSelfMetrics | null>(null);
+	let current = $derived(usePiped ? (pipedCurrent ?? null) : fetchedCurrent);
 	let snaps = $state<StatusEvent[]>([]);
 	let loaded = $state(false);
 
@@ -25,12 +32,12 @@
 
 	async function load() {
 		try {
-			const [health, ev] = await Promise.all([
-				api.nodeHealth(nodeId),
-				api.statusEvents(nodeId, 'snapshot', 50)
-			]);
-			current = selfMetricsOf(health.last_snapshot);
+			const ev = await api.statusEvents(nodeId, 'snapshot', 50);
 			snaps = ev.events;
+			if (!usePiped) {
+				const health = await api.nodeHealth(nodeId);
+				fetchedCurrent = selfMetricsOf(health.last_snapshot);
+			}
 		} catch {
 			/* overview is best-effort */
 		} finally {

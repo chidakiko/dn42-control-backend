@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""``GET /admin/fleet/overview`` 聚合端点单测。
+"""``GET /ui/fleet/overview`` 聚合端点单测。
 
 该只读端点供 Web 仪表盘单次拉取整个 fleet：健康概览(同 ``/admin/health``) + 每节点
 启用的服务角色 ``capabilities`` + 全网物理 WireGuard 邻接 ``links``(由各节点
@@ -110,7 +110,7 @@ def test_fleet_overview_aggregates_capabilities_and_links(client: TestClient) ->
     )
     client.app.state.desired_state = _FakeDesiredState(states)
 
-    resp = client.get("/api/v1/admin/fleet/overview")
+    resp = client.get("/api/v1/ui/fleet/overview")
     assert resp.status_code == 200, resp.text
     body = resp.json()
 
@@ -146,7 +146,7 @@ def test_fleet_overview_empty_capabilities_when_no_desired_state(
     client.app.state.node_status = _FakeNodeStatus([_row("ghost", "unknown")])
     client.app.state.desired_state = _FakeDesiredState({})  # 无 desired state
 
-    body = client.get("/api/v1/admin/fleet/overview").json()
+    body = client.get("/api/v1/ui/fleet/overview").json()
     assert body["summary"] == {"unknown": 1}
     assert body["nodes"][0]["capabilities"] == []
     assert body["links"] == []

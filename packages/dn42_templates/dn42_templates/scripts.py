@@ -50,14 +50,28 @@ def render_wireguard_apply_script(
 
 
 def render_apply_all_wg_script(state: DesiredState, env: Environment | None = None) -> str:
-    """渲染按顺序应用全部 WireGuard 接口脚本的聚合入口。"""
+    """渲染按顺序应用全部受管接口脚本的聚合入口（容器自启时调用）。
+
+    收录**所有 dummy 接口**（dn42-lo 身份地址、dns-anycast 任播地址等）与所有
+    WireGuard 接口——dummy 在前，先补身份/任播地址再起隧道。这样 wg-gateway 容器
+    每次启动都把 netns 的 L3 状态一次性补齐、自给自足，任何重启都能自愈，**不依赖
+    agent 的 convergence**：外部重启（如 ``systemctl restart docker``）不触发
+    convergence，曾导致只有 dn42-lo/WG 被自启脚本恢复、dns-anycast 漏建，进而 bird
+    的启动脚本死等 dns-anycast 接口、永不启动。
+    """
 
     active_env = env or create_config_scripts_environment()
+    managed = [
+        interface
+        for interface in state.interfaces
+        if interface.kind in {InterfaceKind.DUMMY, InterfaceKind.WIREGUARD}
+    ]
+    ordered = sorted(
+        managed, key=lambda item: (item.kind != InterfaceKind.DUMMY, item.name)
+    )
     return active_env.get_template("wg/apply-all-wg.sh.j2").render(
         interface_scripts=[
-            f"/opt/dn42/scripts/wg/apply-{interface.name}.sh"
-            for interface in sorted(state.interfaces, key=lambda item: item.name)
-            if interface.kind == InterfaceKind.WIREGUARD
+            f"/opt/dn42/scripts/wg/apply-{interface.name}.sh" for interface in ordered
         ]
     )
 

@@ -39,6 +39,7 @@ from .services.node_status import NodeStatusStore  # noqa: E402
 from .services.pending_registrations import PendingRegistrationStore  # noqa: E402
 from .services.routing import RoutingStore  # noqa: E402
 from .services.tokens import TokenStore  # noqa: E402
+from .services.traffic import TrafficStore  # noqa: E402
 
 _LOGGER = logging.getLogger("dn42.control")
 
@@ -75,6 +76,7 @@ def create_app(config: ControlServerConfig | None = None) -> FastAPI:
         app.state.pending_registrations = PendingRegistrationStore(database)
         app.state.enrollment_tokens = EnrollmentTokenStore(database)
         app.state.routing = RoutingStore(database, cache=cache)
+        app.state.traffic = TrafficStore(database, cache=cache)
         app.state.audit = AuditLogStore(database)
         app.state.bus = EventBus()
 

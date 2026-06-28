@@ -104,13 +104,98 @@ class NodeStatusEvents(_Dto):
     events: list[StatusEvent]
 
 
+# ---- WebUI 专用观测聚合视图 ----
+
+
+class TrafficPoint(_Dto):
+    """一个时间点的吞吐率(字节/秒),由相邻快照的 WG 累计计数差分得出。"""
+
+    captured_at: str | None = None
+    rx_bytes_per_sec: float = 0
+    tx_bytes_per_sec: float = 0
+
+
+class NodeTraffic(_Dto):
+    """``GET /admin/nodes/{id}/traffic``:单节点 WG 吞吐时间线(服务端差分,免前端拉全量快照)。"""
+
+    node_id: str
+    points: list[TrafficPoint] = []
+
+
+class FleetTraffic(_Dto):
+    """``GET /admin/fleet/traffic``:全 fleet 吞吐时间线(各节点按时间桶对齐求和)。"""
+
+    points: list[TrafficPoint] = []
+
+
+class LinkStatus(_Dto):
+    """一条链路(目前 WireGuard)的 per-peer 运行时状态(服务端已判 up/stale/down)。"""
+
+    interface: str | None = None
+    type: str = "wireguard"
+    public_key: str | None = None
+    endpoint: str | None = None
+    last_handshake_seconds: int | None = None
+    transfer_rx_bytes: int = 0
+    transfer_tx_bytes: int = 0
+    status: str
+
+
+class NodeLinks(_Dto):
+    """``GET /admin/nodes/{id}/links``:单节点全部链路状态(类型化,免前端扒 last_snapshot)。"""
+
+    node_id: str
+    links: list[LinkStatus] = []
+
+
+class BgpSessionStatus(_Dto):
+    """一条 BGP 会话的状态:范围(内/外)+ Established 判定,服务端按配置归类。"""
+
+    name: str | None = None
+    session: str | None = None
+    scope: str
+    state: str | None = None
+    health: str
+    since: str | None = None
+    info: str | None = None
+
+
+class NodeBgpSessions(_Dto):
+    """``GET /admin/nodes/{id}/bgp-sessions/status``:内 iBGP + 外 eBGP 综合状态。"""
+
+    node_id: str
+    sessions: list[BgpSessionStatus] = []
+
+
+class NodeOverview(NodeHealthRow):
+    """``GET /admin/nodes/{id}/overview``:节点页一次拉全,免前端 4× 拉 health + 扒 last_snapshot。
+
+    一个请求把节点概览页 + 链路/BGP 状态列需要的都给齐:健康行(继承)+ 服务能力 +
+    进程自观测 + 当前 drift(取自 last_report)+ 类型化链路状态 + BGP 会话状态。历史
+    序列(sparkline/趋势)仍走 status-events,不在此聚合。
+    """
+
+    capabilities: list[str] = []
+    self_metrics: dict[str, Any] | None = None
+    drift: list[dict[str, Any]] = []
+    links: list[LinkStatus] = []
+    bgp_sessions: list[BgpSessionStatus] = []
+
+
 __all__ = [
+    "BgpSessionStatus",
     "FleetHealth",
     "FleetLink",
     "FleetOverview",
     "FleetOverviewNode",
+    "FleetTraffic",
+    "LinkStatus",
+    "NodeBgpSessions",
     "NodeHealthDetail",
     "NodeHealthRow",
+    "NodeLinks",
+    "NodeOverview",
     "NodeStatusEvents",
+    "NodeTraffic",
     "StatusEvent",
 ]

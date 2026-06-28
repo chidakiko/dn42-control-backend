@@ -12,7 +12,7 @@ Radar 式查询：摘要、起源 AS Top 榜、前缀检索、时间线。
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import String, cast, delete, func, or_, select
 
@@ -245,6 +245,137 @@ class RoutingStore:
         await self._cache.set_json("routing:fleet", result, ttl_seconds=self._ROUTING_TTL)
         return result
 
+    async def get_fleet_overview(
+        self, *, window_hours: int = 8, bucket_seconds: int = 300, origins_limit: int = 12
+    ) -> dict:
+        """WebUI 专用聚合:fleet 路由总览(``get_fleet`` 的 summary+nodes)+ **服务端算好的
+        路由表规模/churn 时间线** + **全机群 Top 起源 AS 榜**,供概览页「路由全表」一次取全。
+
+        iBGP 收敛后各节点 RIB 趋同,故 ``trend`` 把全节点 ``node_routing_events`` 按
+        ``bucket_seconds`` 对齐:每桶取各节点 ``route_count`` 中位数(代表全机群表规模),
+        并对 ``announced`` / ``withdrawn`` 求和(路由变化 churn)。取代前端逐节点拉 timeline。
+
+        ``origins`` 同理:各节点起源 AS 计数趋同,per-ASN 取各节点最大计数代表全机群
+        (落后节点计数偏小,max 取健康值),按计数降序取前 ``origins_limit``。
+        """
+
+        fleet = await self.get_fleet()
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+        sizes: dict[int, list[int]] = {}
+        ann: dict[int, int] = {}
+        wd: dict[int, int] = {}
+        origin_max: dict[int, int] = {}
+        async with self._db.session() as session:
+            rows = await session.execute(
+                select(
+                    NodeRoutingEvent.created_at,
+                    NodeRoutingEvent.route_count,
+                    NodeRoutingEvent.announced,
+                    NodeRoutingEvent.withdrawn,
+                ).where(NodeRoutingEvent.created_at >= cutoff)
+            )
+            for created, count, a, w in rows.all():
+                if created is None:
+                    continue
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+                b = int(created.timestamp()) // bucket_seconds * bucket_seconds
+                sizes.setdefault(b, []).append(count or 0)
+                ann[b] = ann.get(b, 0) + (a or 0)
+                wd[b] = wd.get(b, 0) + (w or 0)
+
+            agg_rows = await session.execute(select(NodeRouting.aggregates))
+            for (aggregates,) in agg_rows.all():
+                for origin in (aggregates or {}).get("origins", []):
+                    asn = origin.get("asn")
+                    if asn is None:
+                        continue
+                    count = origin.get("count", 0) or 0
+                    if count > origin_max.get(asn, 0):
+                        origin_max[asn] = count
+        trend: list[dict] = []
+        for b in sorted(sizes):
+            vals = sorted(sizes[b])
+            m = len(vals) // 2
+            med = vals[m] if len(vals) % 2 else (vals[m - 1] + vals[m]) // 2
+            trend.append(
+                {
+                    "captured_at": datetime.fromtimestamp(b, tz=timezone.utc).isoformat(),
+                    "size": med,
+                    "announced": ann.get(b, 0),
+                    "withdrawn": wd.get(b, 0),
+                }
+            )
+        origins = [
+            {"asn": asn, "count": count}
+            for asn, count in sorted(origin_max.items(), key=lambda kv: (-kv[1], kv[0]))
+        ][:origins_limit]
+        return {**fleet, "trend": trend, "origins": origins}
+
+    @staticmethod
+    def _summary_dict(row: NodeRouting) -> dict:
+        aggregates = row.aggregates or {}
+        return {
+            "node_id": row.node_id,
+            "observation": row.observation,
+            "captured_at": _iso(row.captured_at),
+            "updated_at": _iso(row.updated_at),
+            "route_count": row.route_count,
+            "route_count_v4": row.route_count_v4,
+            "route_count_v6": row.route_count_v6,
+            "local_count": aggregates.get("local_count", 0),
+            "rpki": {
+                "valid": row.rpki_valid,
+                "invalid": row.rpki_invalid,
+                "not_found": row.rpki_not_found,
+            },
+            # ROA 表整张采集失败时 False,前端显式提示(不再悄悄塞进「未知」)。
+            "rpki_observed": aggregates.get("rpki_observed", True),
+            "prefix_lengths": aggregates.get("prefix_lengths", {"4": {}, "6": {}}),
+            "as_path_lengths": aggregates.get("as_path_lengths", {}),
+            "peers": aggregates.get("peers", []),
+            "prefilter": aggregates.get("prefilter"),
+        }
+
+    @staticmethod
+    def _origins_dict(row: NodeRouting, *, limit: int) -> dict:
+        origins = (row.aggregates or {}).get("origins", [])
+        return {
+            "node_id": row.node_id,
+            "total": len(origins),
+            "origins": origins[:limit],
+        }
+
+    async def _timeline_dict(self, session, node_id: str, *, limit: int) -> dict:
+        stmt = (
+            select(NodeRoutingEvent)
+            .where(NodeRoutingEvent.node_id == node_id)
+            .order_by(NodeRoutingEvent.id.desc())
+            .limit(limit)
+        )
+        rows = await session.execute(stmt)
+        events = [
+            {
+                "id": ev.id,
+                "captured_at": _iso(ev.captured_at),
+                "created_at": _iso(ev.created_at),
+                "route_count": ev.route_count,
+                "route_count_v4": ev.route_count_v4,
+                "route_count_v6": ev.route_count_v6,
+                "rpki": {
+                    "valid": ev.rpki_valid,
+                    "invalid": ev.rpki_invalid,
+                    "not_found": ev.rpki_not_found,
+                },
+                "announced": ev.announced,
+                "withdrawn": ev.withdrawn,
+            }
+            for ev in rows.scalars()
+        ]
+        # 时间线按时间升序更适合画图；DB 取的是最近 N 条（倒序），这里翻正。
+        events.reverse()
+        return {"node_id": node_id, "events": events}
+
     async def get_summary(self, node_id: str) -> dict | None:
         cache_key = f"routing:summary:{node_id}"
         cached = await self._cache.get_json(cache_key)
@@ -254,28 +385,7 @@ class RoutingStore:
             row = await session.get(NodeRouting, node_id)
             if row is None:
                 return None
-            aggregates = row.aggregates or {}
-            result = {
-                "node_id": row.node_id,
-                "observation": row.observation,
-                "captured_at": _iso(row.captured_at),
-                "updated_at": _iso(row.updated_at),
-                "route_count": row.route_count,
-                "route_count_v4": row.route_count_v4,
-                "route_count_v6": row.route_count_v6,
-                "local_count": aggregates.get("local_count", 0),
-                "rpki": {
-                    "valid": row.rpki_valid,
-                    "invalid": row.rpki_invalid,
-                    "not_found": row.rpki_not_found,
-                },
-                # ROA 表整张采集失败时 False,前端显式提示(不再悄悄塞进「未知」)。
-                "rpki_observed": aggregates.get("rpki_observed", True),
-                "prefix_lengths": aggregates.get("prefix_lengths", {"4": {}, "6": {}}),
-                "as_path_lengths": aggregates.get("as_path_lengths", {}),
-                "peers": aggregates.get("peers", []),
-                "prefilter": aggregates.get("prefilter"),
-            }
+            result = self._summary_dict(row)
         await self._cache.set_json(cache_key, result, ttl_seconds=self._ROUTING_TTL)
         return result
 
@@ -284,11 +394,27 @@ class RoutingStore:
             row = await session.get(NodeRouting, node_id)
             if row is None:
                 return None
-            origins = (row.aggregates or {}).get("origins", [])
+            return self._origins_dict(row, limit=limit)
+
+    async def get_dashboard(
+        self, node_id: str, *, origins_limit: int = 15, timeline_limit: int = 200
+    ) -> dict | None:
+        """RoutingTab「头部」三件套一次取全：summary + origins + timeline。
+
+        前端进页 / 每个刷新 tick 原本各拉 3 个端点（3 次跨网往返）；这里一个 session
+        读一次 ``NodeRouting`` 行 + 一次事件查询即拼齐，省两次往返（跨 GFW 时延敏感）。
+        节点从未上报 ⇒ ``None``（404 语义）。
+        """
+
+        async with self._db.session() as session:
+            row = await session.get(NodeRouting, node_id)
+            if row is None:
+                return None
             return {
                 "node_id": node_id,
-                "total": len(origins),
-                "origins": origins[:limit],
+                "summary": self._summary_dict(row),
+                "origins": self._origins_dict(row, limit=origins_limit),
+                "timeline": await self._timeline_dict(session, node_id, limit=timeline_limit),
             }
 
     async def get_prefixes(
@@ -342,34 +468,7 @@ class RoutingStore:
 
     async def get_timeline(self, node_id: str, *, limit: int = 200) -> dict:
         async with self._db.session() as session:
-            stmt = (
-                select(NodeRoutingEvent)
-                .where(NodeRoutingEvent.node_id == node_id)
-                .order_by(NodeRoutingEvent.id.desc())
-                .limit(limit)
-            )
-            rows = await session.execute(stmt)
-            events = [
-                {
-                    "id": ev.id,
-                    "captured_at": _iso(ev.captured_at),
-                    "created_at": _iso(ev.created_at),
-                    "route_count": ev.route_count,
-                    "route_count_v4": ev.route_count_v4,
-                    "route_count_v6": ev.route_count_v6,
-                    "rpki": {
-                        "valid": ev.rpki_valid,
-                        "invalid": ev.rpki_invalid,
-                        "not_found": ev.rpki_not_found,
-                    },
-                    "announced": ev.announced,
-                    "withdrawn": ev.withdrawn,
-                }
-                for ev in rows.scalars()
-            ]
-            # 时间线按时间升序更适合画图；DB 取的是最近 N 条（倒序），这里翻正。
-            events.reverse()
-            return {"node_id": node_id, "events": events}
+            return await self._timeline_dict(session, node_id, limit=limit)
 
 
 __all__ = ["RoutingStore"]

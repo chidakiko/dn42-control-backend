@@ -8,6 +8,7 @@
 	import type { AgentTokenOut } from '$lib/types';
 	import Modal from './../Modal.svelte';
 	import SecretReveal from './../SecretReveal.svelte';
+	import SkeletonTable from './../SkeletonTable.svelte';
 
 	let { nodeId }: { nodeId: string } = $props();
 
@@ -93,7 +94,17 @@
 </div>
 
 {#if loading && items.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonTable
+		headers={[
+			t('tok.col.id'),
+			t('tok.col.agent'),
+			t('tok.col.status'),
+			t('tok.col.issued'),
+			t('tok.col.expires'),
+			''
+		]}
+		cols={['8rem', '6rem', '4rem', '6rem', '6rem', '3rem']}
+	/>
 {:else if err}
 	<p class="error-text">{err}</p>
 {:else if items.length === 0}

@@ -5,6 +5,8 @@
 	import { t } from '$lib/i18n.svelte';
 	import type { DnsRecordOut } from '$lib/types';
 	import Modal from '$lib/components/Modal.svelte';
+	import Select from '$lib/components/Select.svelte';
+	import SkeletonTable from '$lib/components/SkeletonTable.svelte';
 
 	let { gid, zid, zone }: { gid: number; zid: number; zone: string } = $props();
 
@@ -149,7 +151,17 @@
 </div>
 
 {#if loading}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonTable
+		headers={[
+			t('dns.rec.col.name'),
+			t('dns.rec.col.type'),
+			t('dns.rec.col.content'),
+			t('dns.rec.col.ttl'),
+			t('dns.rec.col.comment'),
+			''
+		]}
+		cols={['8rem', '3rem', '12rem', '3rem', '6rem', '3rem']}
+	/>
 {:else if error}
 	<p class="error-text">{error}</p>
 {:else if records.length === 0}
@@ -188,11 +200,7 @@
 	<div class="form">
 		<label>
 			<span>{t('dns.rec.field.type')}</span>
-			<select bind:value={fType}>
-				{#each TYPES as ty (ty)}
-					<option value={ty}>{ty}</option>
-				{/each}
-			</select>
+			<Select bind:value={fType} options={TYPES.map((ty) => ({ value: ty, label: ty }))} ariaLabel="record type" />
 		</label>
 		<label>
 			<span>{t('dns.rec.field.name')}</span>

@@ -9,6 +9,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import DnsRecordsPanel from '$lib/components/node/DnsRecordsPanel.svelte';
+	import SkeletonTable from '$lib/components/SkeletonTable.svelte';
 	import { autoRefresh } from '$lib/refresh.svelte';
 
 	let groups = $state<DnsGroupOut[]>([]);
@@ -221,7 +222,19 @@
 </div>
 
 {#if loading && groups.length === 0}
-	<div class="empty">{t('common.loading')}</div>
+	<div class="card" style="padding:0">
+		<SkeletonTable
+			headers={[
+				t('dns.col.name'),
+				t('dns.col.bind'),
+				t('dns.col.zones'),
+				t('dns.col.members'),
+				t('dns.col.enabled'),
+				''
+			]}
+			cols={['7rem', '8rem', '3rem', '4rem', '3rem', '3rem']}
+		/>
+	</div>
 {:else if error}
 	<div class="card"><p class="error-text">{error}</p></div>
 {:else}

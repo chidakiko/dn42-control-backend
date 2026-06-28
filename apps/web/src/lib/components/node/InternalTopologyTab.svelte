@@ -7,6 +7,7 @@
 	import { api, errorMessage } from '$lib/api';
 	import { t } from '$lib/i18n.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import SkeletonText from '$lib/components/SkeletonText.svelte';
 	import { fmtTime } from '$lib/format';
 	import { autoRefresh } from '$lib/refresh.svelte';
 	import type { InternalTopologyView } from '$lib/types';
@@ -47,7 +48,7 @@
 </div>
 
 {#if loading && !data}
-	<div class="empty">{t('common.loading')}</div>
+	<SkeletonText lines={4} />
 {:else if err}
 	<p class="error-text">{err}</p>
 {:else if !data || !data.configured}
@@ -56,44 +57,12 @@
 	<p class="note">{t('internal.note')}</p>
 
 	<div class="meta">
-		{#if data.full_mesh_ibgp}<span class="tag">{t('internal.mesh')}</span>{/if}
 		{#if data.routing_observed && data.captured_at}
 			<span class="faint">{t('internal.captured')} {fmtTime(data.captured_at)}</span>
 		{:else}
 			<span class="faint">{t('internal.notObserved')}</span>
 		{/if}
 	</div>
-
-	<h4>{t('internal.ibgp')} ({data.ibgp_peers.length})</h4>
-	{#if data.ibgp_peers.length}
-		<table>
-			<thead>
-				<tr>
-					<th>{t('internal.peer')}</th>
-					<th>{t('internal.loopback')}</th>
-					<th>{t('internal.protocol')}</th>
-					<th>{t('internal.ribRoutes')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.ibgp_peers as p (p.protocol)}
-					<tr>
-						<td class="mono">{p.node}</td>
-						<td class="mono faint">{p.ownip6}</td>
-						<td class="mono">{p.protocol}</td>
-						<td>
-							<span class="badge {liveBadge(p.in_rib)}">
-								<span class="dot"></span>{p.rib_routes}
-								{p.in_rib ? t('internal.live') : t('internal.notLive')}
-							</span>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	{:else}
-		<p class="faint">{t('common.none')}</p>
-	{/if}
 
 	<h4>{t('internal.ospf')}</h4>
 	<div class="inline ospf-badges">

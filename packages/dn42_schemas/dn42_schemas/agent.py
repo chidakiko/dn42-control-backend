@@ -251,13 +251,40 @@ class ObservedBgpProtocol(StrictModel):
         return validate_iso8601_timestamp(value)
 
 
+class ObservedWireGuardPeer(StrictModel):
+    """`wg show <iface> dump` 的单个 peer 观测——隧道活跃度的**原始事实**。
+
+    只存 dump 直接给出的稳定字段；``up`` / ``stale`` / ``down`` 的判定刻意留给消费端
+    （按 ``last_handshake_seconds`` 阈值，WG healthy 隧道约每 2 分钟握手一次），让前端
+    能结合快照新鲜度再判，schema 不烘焙时钟相关结论。公钥不做强校验——观测字段的小
+    瑕疵不该拖累整份快照被拒。
+
+    Attributes:
+        public_key: 对端公钥（定位 peer）。
+        endpoint: 内核当前钉住的 ``ip:port``；``(none)`` / 未连为 None。
+        last_handshake_seconds: 采集时刻距最近一次握手的秒数；从未握手为 None。
+        transfer_rx_bytes / transfer_tx_bytes: 该 peer 累计收 / 发字节。
+    """
+
+    public_key: str
+    endpoint: str | None = None
+    last_handshake_seconds: int | None = Field(default=None, ge=0)
+    transfer_rx_bytes: int = Field(default=0, ge=0)
+    transfer_tx_bytes: int = Field(default=0, ge=0)
+
+
 class ObservedWireGuardInterface(StrictModel):
-    """`wg show` 类接口的观测结果；只取跨发行版稳定的三件事：名字 / 监听端口 / peer 数量。"""
+    """`wg show` 类接口的观测结果：接口名 / 监听端口 / peer 数量 + per-peer 隧道状态。
+
+    ``peers`` 为空兼容旧 agent（只采到 ``peer_count``）；新 agent 解析 dump 的 peer 行，
+    填入每条隧道的握手 / 收发 / endpoint，供前端做隧道存活监控。
+    """
 
     name: str
     listen_port: int | None = Field(default=None, ge=1, le=65535)
     peer_count: int = Field(default=0, ge=0)
     status: RuntimeResourceStatus = RuntimeResourceStatus.UNKNOWN
+    peers: list[ObservedWireGuardPeer] = Field(default_factory=list)
 
 
 class ObservedRoute(StrictModel):
@@ -483,6 +510,35 @@ class WireGuardReresolveReport(StrictModel):
     checked: int = Field(default=0, ge=0)
     reresolved: list[WireGuardReresolveEntry] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+
+    @field_validator("captured_at")
+    @classmethod
+    def _validate_captured_at(cls, value: str) -> str:
+        return validate_iso8601_timestamp(value)
+
+
+class WireGuardTrafficSample(StrictModel):
+    """节点 WG 流量的一次**轻量**采样——30s 高分辨率吞吐时间线的原始事实。
+
+    与完整 ``RuntimeSnapshot``（容器 / 接口 / BGP 全采，节奏数分钟）刻意分开：agent
+    用独立的轻量循环只跑一次 ``wg show all transfer``，把全部 peer 的累计收 / 发字节
+    求和后上报，让控制面以 30s 粒度画吞吐曲线，而不必为高频流量去拉整份重快照。
+
+    ``rx_bytes`` / ``tx_bytes`` 是**累计计数**（自接口建立起）；速率由控制面对相邻两次
+    采样差分得出（计数器在接口重建时归零，差分钳到 ≥0）。绝不参与对账 / apply。
+
+    Attributes:
+        node_id: 上报节点。
+        captured_at: 采样时刻（ISO-8601）。
+        rx_bytes / tx_bytes: 该时刻全部 WG peer 的累计收 / 发字节之和。
+        peer_count: 采样到的 peer 总数（仅供观测，不参与速率计算）。
+    """
+
+    node_id: str
+    captured_at: str
+    rx_bytes: int = Field(default=0, ge=0)
+    tx_bytes: int = Field(default=0, ge=0)
+    peer_count: int = Field(default=0, ge=0)
 
     @field_validator("captured_at")
     @classmethod

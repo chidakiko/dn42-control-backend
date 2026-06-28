@@ -571,6 +571,18 @@ def role_default_healthcheck(
             retries=5,
             start_period_seconds=20,
         )
+    if role == ServiceRole.BIRD_ROUTER:
+        # bird daemon 可能死在「Docker 仍报 Up」的容器里：start-bird-router.sh 起 bird 后
+        # ``exec sleep infinity``,bird 崩了容器照样 running、不自起。探活直连 bird 控制
+        # socket,daemon 不应答即判 unhealthy → agent 据此重建(config_hash 看不出这种
+        # 运行时漂移)。start_period 给足:bird 启动前要等 dummy/WG 接口出现。
+        return HealthCheckSpec(
+            test=["CMD-SHELL", "birdc show status >/dev/null 2>&1"],
+            interval_seconds=30,
+            timeout_seconds=5,
+            retries=3,
+            start_period_seconds=60,
+        )
     return None
 
 

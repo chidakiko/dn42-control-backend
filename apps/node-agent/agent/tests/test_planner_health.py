@@ -208,6 +208,56 @@ def test_container_plan_keeps_containers_across_generation_bump() -> None:
     assert all(step.action == ContainerAction.KEEP for step in plan.steps)
 
 
+def test_container_plan_recreates_running_but_unhealthy_service() -> None:
+    """容器 Up 但健康检查持续失败 → RECREATE（服务级存活补救）。
+
+    回归 2026-06-26 事故:bird daemon 死在「Docker 仍报 Up」的容器里(start 脚本
+    ``exec sleep infinity`` 不监督 bird),config_hash 不变、状态 running,旧逻辑判
+    KEEP、放任几小时无人管。据存活探针(``healthy=False``)补救重建。
+    """
+
+    state = build_hkg1_example_state()
+    project = node_project_name(state)
+    hashes = _hashes(state)
+    bird_name = service_container_name(project, "dn42-bird-router")
+
+    # 全部在跑、哈希一致;唯独 bird-router 健康检查失败(healthy=False)。
+    observed = [
+        _running_container(name, ServiceRole.BIRD_ROUTER, value)
+        for name, value in hashes.items()
+    ]
+    observed = [
+        item.model_copy(update={"healthy": False}) if item.name == bird_name else item
+        for item in observed
+    ]
+
+    step = next(s for s in _plan(state, observed).steps if s.container_name == bird_name)
+    assert step.action == ContainerAction.RECREATE
+    assert "unhealthy" in step.reason
+
+
+def test_container_plan_keeps_running_with_unknown_health() -> None:
+    """``healthy is None``(无探活 / 未确认)绝不触发重建——避免误杀。"""
+
+    state = build_hkg1_example_state()
+    project = node_project_name(state)
+    hashes = _hashes(state)
+    bird_name = service_container_name(project, "dn42-bird-router")
+    observed = [
+        ObservedContainer(
+            name=name,
+            role=ServiceRole.BIRD_ROUTER,
+            config_hash=value,
+            status=RuntimeResourceStatus.RUNNING,
+            healthy=None,
+        )
+        for name, value in hashes.items()
+    ]
+
+    step = next(s for s in _plan(state, observed).steps if s.container_name == bird_name)
+    assert step.action == ContainerAction.KEEP
+
+
 def test_runtime_snapshot_uses_observer_and_reports_applied_generation() -> None:
     state = build_hkg1_example_state()
     project = node_project_name(state)

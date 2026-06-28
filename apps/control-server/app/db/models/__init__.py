@@ -13,6 +13,7 @@ from .node import AgentToken, EnrollmentToken, Node, PendingRegistration
 from .node_status import NodeStatus, NodeStatusEvent
 from .peering import BgpSession, Peering, WgInterface
 from .routing import NodeRouteEntry, NodeRouting, NodeRoutingEvent
+from .traffic import NodeTrafficRollup
 
 __all__ = [
     "AdminAuditLog",
@@ -30,6 +31,7 @@ __all__ = [
     "NodeRoutingEvent",
     "NodeStatus",
     "NodeStatusEvent",
+    "NodeTrafficRollup",
     "PendingRegistration",
     "Peering",
     "WgInterface",

@@ -25,6 +25,7 @@
 	import type { InterfaceOut } from '$lib/types';
 	import Modal from './../Modal.svelte';
 	import JsonView from './../JsonView.svelte';
+	import Select from './../Select.svelte';
 
 	let {
 		nodeId,
@@ -423,11 +424,17 @@
 			<div class="sess derived">
 				<div class="spread">
 					<strong class="mono">{t('peer.wiz.bgp.primary')}</strong>
-					<select bind:value={bgp.family} class="fam">
-						<option value="mp-bgp">mp-bgp</option>
-						<option value="ipv6">ipv6</option>
-						<option value="ipv4">ipv4</option>
-					</select>
+					<Select
+						width="9rem"
+						size="sm"
+						value={bgp.family}
+						options={[
+							{ value: 'mp-bgp', label: 'mp-bgp' },
+							{ value: 'ipv6', label: 'ipv6' },
+							{ value: 'ipv4', label: 'ipv4' }
+						]}
+						onChange={(v) => (bgp.family = v as Family)}
+					/>
 				</div>
 				<!-- Derived, read-only — proves the addressing is consistent by construction -->
 				<dl class="kv">
@@ -603,9 +610,6 @@
 	.sess.derived {
 		border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 		background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
-	}
-	.fam {
-		max-width: 8rem;
 	}
 	.kv {
 		display: grid;

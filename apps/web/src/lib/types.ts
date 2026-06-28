@@ -92,6 +92,18 @@ export interface StatusEvent {
 	payload: Record<string, unknown>;
 }
 
+// One reconcile drift item, as carried in a report event's payload.drift.
+// Mirrors dn42_schemas.DriftItem.
+export type DriftSeverity = 'info' | 'warning' | 'critical';
+export interface DriftItem {
+	component: string;
+	name: string;
+	severity: DriftSeverity;
+	message: string;
+	desired?: string | null;
+	observed?: string | null;
+}
+
 // agent 进程自观测，随 RuntimeSnapshot 上报、落在 last_snapshot.self_metrics。
 // 全可选——旧 agent / 尚未采到时为 null。镜像 dn42_schemas.AgentSelfMetrics。
 export interface AgentSelfMetrics {
@@ -110,6 +122,84 @@ export interface AgentSelfMetrics {
 export interface NodeStatusEvents {
 	node_id: string;
 	events: StatusEvent[];
+}
+
+// WG tunnel observation, carried in last_snapshot.wireguard_interfaces[].
+// Mirrors dn42_schemas.ObservedWireGuardInterface / ObservedWireGuardPeer.
+export interface ObservedWgPeer {
+	public_key: string;
+	endpoint: string | null;
+	last_handshake_seconds: number | null;
+	transfer_rx_bytes: number;
+	transfer_tx_bytes: number;
+}
+export interface ObservedWgInterface {
+	name: string;
+	listen_port: number | null;
+	peer_count: number;
+	status: string;
+	peers?: ObservedWgPeer[];
+}
+
+// All bird BGP protocols (internal iBGP + external eBGP) with live state, carried
+// in last_snapshot.bgp_protocols. Mirrors dn42_schemas.ObservedBgpProtocol.
+export interface ObservedBgpProtocol {
+	name: string;
+	session: string | null;
+	state: string;
+	since: string | null;
+	info: string | null;
+}
+
+// WebUI-specific observability aggregates (server pre-computes these).
+export interface TrafficPoint {
+	captured_at: string | null;
+	rx_bytes_per_sec: number;
+	tx_bytes_per_sec: number;
+}
+export interface NodeTraffic {
+	node_id: string;
+	points: TrafficPoint[];
+}
+export interface FleetTraffic {
+	points: TrafficPoint[];
+}
+export interface LinkStatus {
+	interface: string | null;
+	type: string;
+	public_key: string | null;
+	endpoint: string | null;
+	last_handshake_seconds: number | null;
+	transfer_rx_bytes: number;
+	transfer_tx_bytes: number;
+	status: string; // up / stale / down
+}
+export interface NodeLinks {
+	node_id: string;
+	links: LinkStatus[];
+}
+export interface BgpSessionStatus {
+	name: string | null;
+	session: string | null;
+	scope: string; // internal / external
+	state: string | null;
+	health: string; // up / connecting / down
+	since: string | null;
+	info: string | null;
+}
+export interface NodeBgpSessions {
+	node_id: string;
+	sessions: BgpSessionStatus[];
+}
+
+// One-shot node page payload — health row + everything the overview/status columns
+// need, so the page fetches once instead of 4× nodeHealth + parsing last_snapshot.
+export interface NodeOverview extends NodeHealthRow {
+	capabilities: string[];
+	self_metrics: AgentSelfMetrics | null;
+	drift: DriftItem[];
+	links: LinkStatus[];
+	bgp_sessions: BgpSessionStatus[];
 }
 
 export interface GenerationOut {
@@ -366,6 +456,13 @@ export interface RoutingTimeline {
 	events: RoutingTimelineEvent[];
 }
 
+export interface RoutingDashboard {
+	node_id: string;
+	summary: RoutingSummary;
+	origins: RoutingOrigins;
+	timeline: RoutingTimeline;
+}
+
 export interface FleetRoutingNode {
 	node_id: string;
 	observation: string;
@@ -387,8 +484,22 @@ export interface FleetRouting {
 	nodes: FleetRoutingNode[];
 }
 
+export interface FleetRoutingTrendPoint {
+	captured_at: string | null;
+	size: number;
+	announced: number;
+	withdrawn: number;
+}
+
+export interface FleetRoutingOverview {
+	summary: FleetRouting['summary'];
+	nodes: FleetRoutingNode[];
+	trend: FleetRoutingTrendPoint[];
+	origins: Array<{ asn: number; count: number }>;
+}
+
 // iBGP/OSPF are not bgp_sessions records — they are synthesised from
-// bird.internal_topology. This view (GET /admin/nodes/{id}/internal-topology)
+// bird.internal_topology. This view (GET /ui/nodes/{id}/internal-topology)
 // exposes that config plus a routing-derived liveness hint (rib_routes).
 export interface IbgpPeerView {
 	node: string;
