@@ -13,6 +13,7 @@
 	import BarChart from '$lib/components/charts/BarChart.svelte';
 	import Donut from '$lib/components/charts/Donut.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { autoRefresh } from '$lib/refresh.svelte';
 	import { t, locale } from '$lib/i18n.svelte';
 
@@ -146,11 +147,44 @@
 		</div>
 		<p class="ph-sub">{t('dash.routing.subtitle')}</p>
 	</div>
-	{#if data}<span class="faint">{t('dash.routing.reporting', data.summary.nodes_reporting)}</span>{/if}
+	{#if data}<span class="faint">{t('dash.routing.reporting', data.summary.nodes_reporting)}</span>
+	{:else if loading}<Skeleton w="84px" h="0.9rem" />{/if}
 </div>
 
 {#if loading && !data}
-	<div class="card"><div class="empty">{t('common.loading')}</div></div>
+	<!-- shape-matched skeleton: same cards + static headers as loaded, only data slots
+	     are skeletonized so the section frame doesn't shift on load. -->
+	<div class="card head-card">
+		<div class="strip">
+			{#each Array(6) as _, i (i)}
+				<div class="stat">
+					<Skeleton w="44px" h="0.7rem" />
+					<Skeleton w="58px" h="1.4rem" />
+				</div>
+			{/each}
+		</div>
+		<div class="donuts">
+			<div class="donut-block"><Skeleton circle h="108px" /></div>
+			<div class="donut-block"><Skeleton circle h="108px" /></div>
+		</div>
+	</div>
+	<div class="rt-2col">
+		<div class="card rt-chart">
+			<div class="card-head"><h3>{t('routing.sizeTrend')}</h3></div>
+			<Skeleton h="170px" />
+			<div class="card-head" style="margin-top:0.6rem"><h3 class="muted">{t('routing.churn')}</h3></div>
+			<Skeleton h="90px" />
+		</div>
+		<div class="card rt-list">
+			<div class="card-head">
+				<h3>{t('routing.topOrigins')}</h3>
+				<span class="faint" style="font-size:0.78rem">{t('routing.topOriginsSub')}</span>
+			</div>
+			<div class="org-list">
+				{#each Array(10) as _, i (i)}<Skeleton h="1.4rem" />{/each}
+			</div>
+		</div>
+	</div>
 {:else if error}
 	<div class="card"><p class="error-text">{error}</p></div>
 {:else if data && data.summary.nodes_reporting === 0}

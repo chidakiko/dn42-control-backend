@@ -35,6 +35,48 @@
 
 	let isLogin = $derived(page.url.pathname === '/login');
 
+	// Top-bar title is derived from the route so each page no longer renders its own
+	// big H1 (it now lives in the shared top bar). Node detail shows the node id.
+	const TITLE_KEY: Record<string, string> = {
+		'/nodes': 'nodes.title',
+		'/registrations': 'reg.title',
+		'/enrollment-tokens': 'enr.title',
+		'/provision': 'prov.title',
+		'/dns-groups': 'dns.title',
+		'/audit': 'audit.title'
+	};
+	// Breadcrumb trail for the top bar. Multi-level routes (node detail) get a
+	// parent crumb + leaf; top-level routes are a single crumb (no separator).
+	let crumbs: { label: string; href?: string }[] = $derived.by(() => {
+		const p = page.url.pathname;
+		if (p === '/') return [{ label: t('dash.title') }];
+		if (p.startsWith('/nodes/')) {
+			const id = decodeURIComponent(p.split('/')[2] ?? '');
+			return [{ label: t('nodes.title'), href: '/nodes' }, { label: id || t('nodes.title') }];
+		}
+		for (const href of Object.keys(TITLE_KEY)) if (p.startsWith(href)) return [{ label: t(TITLE_KEY[href]) }];
+		return [{ label: 'DN42 Control' }];
+	});
+
+	// Per-route descriptive line shown under the breadcrumb in the top bar (was each
+	// page's own subtitle). Node detail keeps its data-driven identity line in the body.
+	const DESC_KEY: Record<string, string> = {
+		'/': 'dash.subtitle',
+		'/nodes': 'nodes.subtitle',
+		'/registrations': 'reg.subtitle',
+		'/enrollment-tokens': 'enr.note',
+		'/provision': 'prov.note',
+		'/dns-groups': 'dns.subtitle',
+		'/audit': 'audit.subtitle'
+	};
+	let pageDesc = $derived.by(() => {
+		const p = page.url.pathname;
+		if (p.startsWith('/nodes/')) return '';
+		if (DESC_KEY[p]) return t(DESC_KEY[p]);
+		for (const href of Object.keys(DESC_KEY)) if (href !== '/' && p.startsWith(href)) return t(DESC_KEY[href]);
+		return '';
+	});
+
 	// Client-side route guard: bounce to /login whenever there's no token and
 	// we're not already on the login screen.
 	$effect(() => {
@@ -47,6 +89,17 @@
 		auth.logout();
 		toast.info(t('common.signedOut'));
 		void goto('/login');
+	}
+
+	// Global manual refresh: bump the shared tick (every live page re-fetches) with a
+	// brief spin for feedback.
+	let refreshing = $state(false);
+	let spinTimer: ReturnType<typeof setTimeout> | null = null;
+	function manualRefresh() {
+		autoRefresh.refreshNow();
+		refreshing = true;
+		if (spinTimer) clearTimeout(spinTimer);
+		spinTimer = setTimeout(() => (refreshing = false), 600);
 	}
 
 	function refreshLabel(ms: number): string {
@@ -115,43 +168,10 @@
 								ariaLabel={t('nav.autorefresh')}
 							/>
 						</label>
-						<label class="ctl">
-							<span>{t('nav.language')}</span>
-							<Select
-								size="sm"
-								width="auto"
-								value={locale.code}
-								options={[
-									{ value: 'en', label: 'English' },
-									{ value: 'zh', label: '简体中文' }
-								]}
-								onChange={(v) => locale.set(v as LangCode)}
-								ariaLabel={t('nav.language')}
-							/>
-						</label>
 						<div class="api-base mono" title={auth.apiBase}>{auth.apiBase}</div>
 					{/if}
 
 					<div class="foot-actions" class:col={sidebar.collapsed}>
-						<Tooltip label={THEME_LABEL[theme.pref]} enabled={sidebar.collapsed}>
-							{#snippet trigger(props)}
-								<button
-									{...props}
-									class="iconbtn"
-									onclick={() => theme.toggle()}
-									aria-label="Toggle theme"
-								>
-									<Icon name={THEME_ICON[theme.pref]} size={16} />
-								</button>
-							{/snippet}
-						</Tooltip>
-						<Tooltip label={t('nav.signout')} enabled={sidebar.collapsed}>
-							{#snippet trigger(props)}
-								<button {...props} class="iconbtn" onclick={logout} aria-label={t('nav.signout')}>
-									<Icon name="logout" size={16} />
-								</button>
-							{/snippet}
-						</Tooltip>
 						<Tooltip
 							label={sidebar.collapsed ? t('nav.expand') : t('nav.collapse')}
 							enabled={sidebar.collapsed}
@@ -171,7 +191,78 @@
 				</div>
 			</aside>
 			<main class="content">
-				{@render children()}
+				<header class="topbar">
+					<div class="tb-head">
+						<nav class="tb-crumbs" aria-label="Breadcrumb">
+							{#each crumbs as c, i (i)}
+								{#if i > 0}
+									<span class="tb-sep" aria-hidden="true">
+										<Icon name="chevron-down" size={13} />
+									</span>
+								{/if}
+								{#if c.href && i < crumbs.length - 1}
+									<a class="tb-crumb" href={c.href}>{c.label}</a>
+								{:else}
+									<span class="tb-crumb current" aria-current="page">{c.label}</span>
+								{/if}
+							{/each}
+						</nav>
+						{#if pageDesc}
+							<Tooltip label={pageDesc} side="bottom">
+								{#snippet trigger(props)}
+									<button {...props} class="tb-info" aria-label={pageDesc}>
+										<Icon name="info" size={15} />
+									</button>
+								{/snippet}
+							</Tooltip>
+						{/if}
+					</div>
+					<div class="tb-actions">
+						<Tooltip label={t('common.refresh')}>
+							{#snippet trigger(props)}
+								<button
+									{...props}
+									class="iconbtn"
+									class:spin={refreshing}
+									onclick={manualRefresh}
+									aria-label={t('common.refresh')}
+								>
+									<Icon name="refresh" size={16} />
+								</button>
+							{/snippet}
+						</Tooltip>
+						<Select
+							icon="languages"
+							value={locale.code}
+							options={[
+								{ value: 'en', label: 'English' },
+								{ value: 'zh', label: '简体中文' },
+								{ value: 'zh-Hant', label: '繁體中文' },
+								{ value: 'ja', label: '日本語' }
+							]}
+							onChange={(v) => locale.set(v as LangCode)}
+							ariaLabel={t('nav.language')}
+						/>
+						<Tooltip label={THEME_LABEL[theme.pref]}>
+							{#snippet trigger(props)}
+								<button
+									{...props}
+									class="iconbtn"
+									onclick={() => theme.toggle()}
+									aria-label="Toggle theme"
+								>
+									<Icon name={THEME_ICON[theme.pref]} size={16} />
+								</button>
+							{/snippet}
+						</Tooltip>
+						<button class="btn sm tb-logout" onclick={logout}>
+							<Icon name="logout" size={15} />{t('nav.signout')}
+						</button>
+					</div>
+				</header>
+				<div class="content-inner">
+					{@render children()}
+				</div>
 			</main>
 		</div>
 	</TooltipPrimitive.Provider>
@@ -232,14 +323,14 @@
 		text-transform: uppercase;
 		color: var(--text-faint);
 	}
-	nav {
+	.sidebar nav {
 		display: flex;
 		flex-direction: column;
 		padding: 0.6rem 0.5rem;
 		gap: 1px;
 		flex: 1;
 	}
-	nav a {
+	.sidebar nav a {
 		position: relative;
 		display: flex;
 		align-items: center;
@@ -251,21 +342,21 @@
 		font-weight: 500;
 		transition: background 0.12s, color 0.12s;
 	}
-	.collapsed nav a {
+	.collapsed .sidebar nav a {
 		justify-content: center;
 		padding: 0.55rem 0;
 	}
-	nav a:hover {
+	.sidebar nav a:hover {
 		background: var(--bg-elev-2);
 		color: var(--text);
 		text-decoration: none;
 	}
-	nav a.active {
+	.sidebar nav a.active {
 		background: var(--accent-soft);
 		color: var(--accent);
 	}
 	/* Cloudflare-style left accent rail on the active item. */
-	nav a.active::before {
+	.sidebar nav a.active::before {
 		content: '';
 		position: absolute;
 		left: -0.5rem;
@@ -276,7 +367,7 @@
 		border-radius: 0 3px 3px 0;
 		background: var(--accent);
 	}
-	nav a .ic {
+	.sidebar nav a .ic {
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -284,10 +375,10 @@
 		color: var(--text-faint);
 		transition: color 0.12s;
 	}
-	nav a:hover .ic {
+	.sidebar nav a:hover .ic {
 		color: var(--text-dim);
 	}
-	nav a.active .ic {
+	.sidebar nav a.active .ic {
 		color: var(--accent);
 	}
 	.foot {
@@ -375,9 +466,106 @@
 		white-space: nowrap;
 	}
 	.content {
-		padding: 1.5rem 2rem;
 		width: 100%;
 		min-width: 0; /* let grid child shrink instead of overflowing */
+		display: flex;
+		flex-direction: column;
+	}
+	/* shared top bar: page title (left) + global controls (right); aligns with the
+	   sidebar brand (both 56px) for one continuous header line. */
+	.topbar {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		min-height: 56px;
+		padding: 0.5rem 2rem;
+		background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+		backdrop-filter: blur(8px);
+		border-bottom: 1px solid var(--border);
+	}
+	/* left side: breadcrumb + a small info icon whose tooltip holds the page description */
+	.tb-head {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.tb-info {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		border: none;
+		padding: 2px;
+		color: var(--text-faint);
+		cursor: help;
+		flex: none;
+	}
+	.tb-info:hover {
+		color: var(--text-dim);
+	}
+	.tb-crumbs {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		min-width: 0;
+		overflow: hidden;
+	}
+	.tb-crumb {
+		font-size: 1.15rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		overflow: hidden;
+	}
+	/* parent crumbs: lighter + linkable; leaf: full-strength current page */
+	a.tb-crumb {
+		color: var(--text-dim);
+		font-weight: 600;
+	}
+	a.tb-crumb:hover {
+		color: var(--text);
+		text-decoration: none;
+	}
+	.tb-crumb.current {
+		color: var(--text);
+	}
+	.tb-sep {
+		display: inline-flex;
+		align-items: center;
+		color: var(--text-faint);
+		transform: rotate(-90deg);
+		flex: none;
+	}
+	.tb-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.iconbtn.spin :global(svg) {
+		animation: tb-spin 0.6s ease;
+	}
+	@keyframes tb-spin {
+		from {
+			transform: rotate(0);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	.tb-logout {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+	.content-inner {
+		padding: 1.5rem 2rem;
+		min-width: 0;
 	}
 	@media (max-width: 720px) {
 		.shell,

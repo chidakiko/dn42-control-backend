@@ -164,6 +164,23 @@ export interface NodeTraffic {
 export interface FleetTraffic {
 	points: TrafficPoint[];
 }
+export interface NodeTrafficNow {
+	node_id: string;
+	rx_bytes_per_sec: number;
+	tx_bytes_per_sec: number;
+}
+export interface PeerTrafficNow {
+	node_id: string;
+	interface: string | null;
+	public_key: string | null;
+	endpoint: string | null;
+	rx_bytes_per_sec: number;
+	tx_bytes_per_sec: number;
+}
+export interface FleetTrafficBreakdown {
+	nodes: NodeTrafficNow[];
+	peers: PeerTrafficNow[];
+}
 export interface LinkStatus {
 	interface: string | null;
 	type: string;

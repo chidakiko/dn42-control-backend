@@ -116,6 +116,27 @@ def test_traffic_rollup_survives_redis_loss(
     assert pts[0]["rx_bytes_per_sec"] == 100  # 两段均 100 B/s 的均值
 
 
+def test_traffic_rollup_records_without_redis_at_ingest(
+    client: TestClient, config: ControlServerConfig
+) -> None:
+    """Redis 自始不可用（Cache(None) no-op）：存档仍须从 PG 持久「上一条样本」差分累加。
+
+    回归 #redis-down-breaks-rollup：上一条样本曾只取自 Redis 热窗口，Redis 关闭时窗口恒空
+    → prev 恒 None → 速率恒 None → _record_rollup 永不执行，高分辨率历史直接断档。
+    """
+
+    node, token = config.bootstrap_node_id, config.bootstrap_agent_token
+    # 默认 TrafficStore 用 Cache(None)（no-op 缓存），等价于 Redis 全程不可用。
+    for ts, rx, tx in _SAMPLES:
+        _post_sample(client, node, token, ts=ts, rx=rx, tx=tx)
+
+    body = client.get(f"/api/v1/ui/nodes/{node}/traffic").json()
+    pts = body["points"]
+    # 无热窗口 → /traffic 直接走 PG 5min 存档；三采样两段速率落进同一 5min 桶 → 一个均值点。
+    assert len(pts) == 1
+    assert pts[0]["rx_bytes_per_sec"] == 100  # 两段均 100 B/s 的均值，证明存档照常累加
+
+
 def test_traffic_falls_back_to_snapshot_without_redis(
     client: TestClient, config: ControlServerConfig
 ) -> None:
@@ -149,6 +170,44 @@ def test_traffic_falls_back_to_snapshot_without_redis(
     pts = body["points"]
     assert len(pts) == 1  # 两份快照差分一段（5min 分辨率）
     assert pts[0]["rx_bytes_per_sec"] == 30_000_000 / 300
+
+
+def test_fleet_traffic_breakdown(client: TestClient, config: ControlServerConfig) -> None:
+    """/ui/fleet/traffic-breakdown 返回按节点 + 按对端的当前吞吐(由最近两份快照差分)。"""
+
+    node, token = config.bootstrap_node_id, config.bootstrap_agent_token
+
+    def _snap(ts: str, rx: int, tx: int) -> dict:
+        return {
+            "node_id": node,
+            "generation": 1,
+            "captured_at": ts,
+            "containers": [],
+            "interfaces": [],
+            "wireguard_interfaces": [
+                {"name": "wg1", "peer_count": 1, "peers": [
+                    {"public_key": "K=", "endpoint": "203.0.113.1:51820",
+                     "transfer_rx_bytes": rx, "transfer_tx_bytes": tx}
+                ]}
+            ],
+        }
+
+    for ts, rx, tx in (
+        ("2026-06-27T01:00:00+00:00", 1_000_000, 500_000),
+        ("2026-06-27T01:05:00+00:00", 31_000_000, 9_500_000),
+    ):
+        assert client.post(
+            "/api/v1/agent/runtime-snapshot", headers=_auth(token), json=_snap(ts, rx, tx)
+        ).status_code == 200
+
+    body = client.get("/api/v1/ui/fleet/traffic-breakdown").json()
+    assert any(
+        n["node_id"] == node and n["rx_bytes_per_sec"] == 30_000_000 / 300 for n in body["nodes"]
+    )
+    peer = next(p for p in body["peers"] if p["node_id"] == node and p["interface"] == "wg1")
+    assert peer["public_key"] == "K="
+    assert peer["rx_bytes_per_sec"] == 30_000_000 / 300
+    assert peer["tx_bytes_per_sec"] == 9_000_000 / 300
 
 
 def test_traffic_rejects_other_node(client: TestClient, config: ControlServerConfig) -> None:

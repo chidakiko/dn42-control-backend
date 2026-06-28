@@ -123,9 +123,39 @@ class NodeTraffic(_Dto):
 
 
 class FleetTraffic(_Dto):
-    """``GET /admin/fleet/traffic``:全 fleet 吞吐时间线(各节点按时间桶对齐求和)。"""
+    """``GET /ui/fleet/traffic``:全 fleet 吞吐时间线(各节点按时间桶对齐求和)。"""
 
     points: list[TrafficPoint] = []
+
+
+class NodeTrafficNow(_Dto):
+    """单节点当前吞吐率(字节/秒),取该节点吞吐序列最新点。"""
+
+    node_id: str
+    rx_bytes_per_sec: float = 0
+    tx_bytes_per_sec: float = 0
+
+
+class PeerTrafficNow(_Dto):
+    """单个 WG 对端(per-peer)当前吞吐率(字节/秒),由该节点最近两份快照差分。"""
+
+    node_id: str
+    interface: str | None = None
+    public_key: str | None = None
+    endpoint: str | None = None
+    rx_bytes_per_sec: float = 0
+    tx_bytes_per_sec: float = 0
+
+
+class FleetTrafficBreakdown(_Dto):
+    """``GET /ui/fleet/traffic-breakdown``:概览流量板块右侧排行——按节点 / 按对端的当前吞吐。
+
+    ``nodes`` 取各节点吞吐序列最新速率(优先 30s 采样);``peers`` 由各节点最近两份快照的
+    per-peer 累计字节差分得出。两者均按 rx+tx 总速率降序,供前端做排行榜。
+    """
+
+    nodes: list[NodeTrafficNow] = []
+    peers: list[PeerTrafficNow] = []
 
 
 class LinkStatus(_Dto):
@@ -189,6 +219,7 @@ __all__ = [
     "FleetOverview",
     "FleetOverviewNode",
     "FleetTraffic",
+    "FleetTrafficBreakdown",
     "LinkStatus",
     "NodeBgpSessions",
     "NodeHealthDetail",
@@ -197,5 +228,7 @@ __all__ = [
     "NodeOverview",
     "NodeStatusEvents",
     "NodeTraffic",
+    "NodeTrafficNow",
+    "PeerTrafficNow",
     "StatusEvent",
 ]

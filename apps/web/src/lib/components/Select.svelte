@@ -3,7 +3,7 @@
 	// a stylable, accessible, portaled dropdown that matches the app's look. String
 	// values only; numeric callers convert at the call site.
 	import { Select } from 'bits-ui';
-	import Icon from './Icon.svelte';
+	import Icon, { type IconName } from './Icon.svelte';
 
 	interface Opt {
 		value: string;
@@ -18,7 +18,8 @@
 		onChange,
 		size = 'md',
 		width,
-		disabled = false
+		disabled = false,
+		icon
 	}: {
 		value: string;
 		options: Opt[];
@@ -29,6 +30,8 @@
 		/** trigger width override (e.g. "auto", "12rem"); defaults to 100% */
 		width?: string;
 		disabled?: boolean;
+		/** when set, the trigger is a compact icon button (hides value text + caret) */
+		icon?: IconName;
 	} = $props();
 
 	let selectedLabel = $derived(options.find((o) => o.value === value)?.label ?? '');
@@ -42,12 +45,17 @@
 	onValueChange={(v) => onChange?.(v)}
 >
 	<Select.Trigger
-		class="sel-trigger {size}"
+		class="sel-trigger {size} {icon ? 'icononly' : ''}"
 		aria-label={ariaLabel}
-		style={width ? `width:${width}` : undefined}
+		title={icon ? ariaLabel : undefined}
+		style={icon ? undefined : width ? `width:${width}` : undefined}
 	>
-		<span class="sel-val" class:placeholder={!selectedLabel}>{selectedLabel || placeholder}</span>
-		<span class="sel-caret"><Icon name="chevron-down" size={14} /></span>
+		{#if icon}
+			<Icon name={icon} size={16} />
+		{:else}
+			<span class="sel-val" class:placeholder={!selectedLabel}>{selectedLabel || placeholder}</span>
+			<span class="sel-caret"><Icon name="chevron-down" size={14} /></span>
+		{/if}
 	</Select.Trigger>
 	<Select.Portal>
 		<Select.Content class="sel-content" sideOffset={6}>
@@ -86,6 +94,23 @@
 		font-size: 0.78rem;
 		padding: 0.25rem 0.5rem;
 		min-width: 5rem;
+	}
+	/* compact icon-only trigger (e.g. language switcher): matches the topbar .iconbtn
+	   exactly (30px square, transparent, --border) so it sits flush with the others. */
+	:global(.sel-trigger.icononly) {
+		width: 30px;
+		height: 30px;
+		min-width: 0;
+		padding: 0;
+		justify-content: center;
+		background: transparent;
+		border-color: var(--border);
+		color: var(--text-dim);
+	}
+	:global(.sel-trigger.icononly:hover) {
+		color: var(--text);
+		border-color: var(--text-faint);
+		background: var(--bg-elev-2);
 	}
 	:global(.sel-trigger:hover) {
 		border-color: var(--text-faint);

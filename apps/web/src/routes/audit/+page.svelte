@@ -3,7 +3,6 @@
 	import { api, errorMessage } from '$lib/api';
 	import { fmtTime } from '$lib/format';
 	import { t } from '$lib/i18n.svelte';
-	import Icon from '$lib/components/Icon.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Select from '$lib/components/Select.svelte';
 	import SkeletonTable from '$lib/components/SkeletonTable.svelte';
@@ -46,14 +45,7 @@
 	}
 </script>
 
-<div class="page-head">
-	<div>
-		<div class="ph-title">
-			<Icon name="audit" size={22} />
-			<h1>{t('audit.title')}</h1>
-		</div>
-		<p class="ph-sub">{t('audit.subtitle')}</p>
-	</div>
+<div class="page-head" style="justify-content:flex-end">
 	<div class="ph-actions">
 		<Select
 			width="auto"
@@ -64,9 +56,6 @@
 				load();
 			}}
 		/>
-		<button class="btn sm" onclick={load} disabled={loading}>
-			<Icon name="refresh" size={15} />{t('common.refresh')}
-		</button>
 	</div>
 </div>
 

@@ -83,6 +83,60 @@ def compute_node_traffic(events: list[dict]) -> list[dict]:
     return _diff_rates(points)
 
 
+def _snapshot_peers(payload: dict) -> dict[tuple, tuple]:
+    """一份快照里的 per-peer 累计字节,键 (interface, public_key) → (rx, tx, interface, endpoint)。"""
+
+    out: dict[tuple, tuple] = {}
+    for iface in payload.get("wireguard_interfaces") or []:
+        name = iface.get("name")
+        for peer in iface.get("peers") or []:
+            key = (name, peer.get("public_key"))
+            out[key] = (
+                peer.get("transfer_rx_bytes") or 0,
+                peer.get("transfer_tx_bytes") or 0,
+                name,
+                peer.get("endpoint"),
+            )
+    return out
+
+
+def compute_peer_rates(snapshots: list[dict]) -> list[dict]:
+    """从一节点最近两份 snapshot 的 per-peer 累计字节差分出每个 WG 对端当前速率(字节/秒)。
+
+    取按时间升序后的最后两份快照,逐 peer 按 (interface, public_key) 对齐做 ``Δ字节/Δ秒``。
+    计数器重建归零钳到 ≥0;不足两份 / Δ秒≤0 时返回空。分辨率即快照节奏(~5min)——per-peer
+    没有 30s 轻量采样,故走快照差分。
+    """
+
+    snaps = sorted(
+        ((_event_ts(e), (e.get("payload") or {})) for e in snapshots),
+        key=lambda t: t[0] or "",
+    )
+    if len(snaps) < 2:
+        return []
+    (ts0, p0), (ts1, p1) = snaps[-2], snaps[-1]
+    a, b = _parse(ts0), _parse(ts1)
+    if a is None or b is None:
+        return []
+    dt = (b - a).total_seconds()
+    if dt <= 0:
+        return []
+    prev, cur = _snapshot_peers(p0), _snapshot_peers(p1)
+    out: list[dict] = []
+    for key, (rx1, tx1, iface, endpoint) in cur.items():
+        rx0, tx0, *_ = prev.get(key) or (0, 0, None, None)
+        out.append(
+            {
+                "interface": iface,
+                "public_key": key[1],
+                "endpoint": endpoint,
+                "rx_bytes_per_sec": max(0, rx1 - rx0) / dt,
+                "tx_bytes_per_sec": max(0, tx1 - tx0) / dt,
+            }
+        )
+    return out
+
+
 def traffic_series_from_samples(samples: list[dict]) -> list[dict]:
     """从轻量 WG 流量采样(``{captured_at, rx_bytes, tx_bytes}``)差分出吞吐时间线。
 

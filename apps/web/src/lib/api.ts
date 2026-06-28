@@ -18,6 +18,7 @@ import type {
 	FleetOverview,
 	FleetRoutingOverview,
 	FleetTraffic,
+	FleetTrafficBreakdown,
 	NodeTraffic,
 	NodeLinks,
 	NodeBgpSessions,
@@ -150,6 +151,8 @@ export const api = {
 	fleetOverview: () => request<FleetOverview>('GET', '/api/v1/ui/fleet/overview'),
 	fleetTraffic: (limit = 120) =>
 		request<FleetTraffic>('GET', `/api/v1/ui/fleet/traffic?limit=${limit}`),
+	fleetTrafficBreakdown: () =>
+		request<FleetTrafficBreakdown>('GET', '/api/v1/ui/fleet/traffic-breakdown'),
 	nodeTraffic: (id: string, limit = 120) =>
 		request<NodeTraffic>('GET', `/api/v1/ui/nodes/${enc(id)}/traffic?limit=${limit}`),
 	nodeLinks: (id: string) =>

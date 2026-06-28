@@ -5,6 +5,7 @@
 @import '@fontsource-variable/inter';
 
 :root {
+	color-scheme: light;
 	/* Light theme (default) */
 	--bg: #f6f7f9;
 	--bg-elev: #ffffff;
@@ -53,6 +54,7 @@
 }
 
 :root[data-theme='dark'] {
+	color-scheme: dark;
 	--bg: #0e1116;
 	--bg-elev: #161b22;
 	--bg-elev-2: #1c232c;

@@ -5,10 +5,17 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
 		<script>
-			// Apply persisted theme before first paint to avoid a flash.
+			// Apply the resolved theme before first paint to avoid a flash (esp. dark mode).
+			// Handles `system` (the default) via prefers-color-scheme; setting color-scheme
+			// makes the browser paint the initial canvas dark right away.
 			try {
-				document.documentElement.dataset.theme =
-					localStorage.getItem('dn42.theme') === 'dark' ? 'dark' : 'light';
+				var k = localStorage.getItem('dn42.theme');
+				var dark =
+					k === 'dark' ||
+					((k === 'system' || !k) && matchMedia('(prefers-color-scheme: dark)').matches);
+				var m = dark ? 'dark' : 'light';
+				document.documentElement.dataset.theme = m;
+				document.documentElement.style.colorScheme = m;
 			} catch (e) {}
 		</script>
 		%sveltekit.head%

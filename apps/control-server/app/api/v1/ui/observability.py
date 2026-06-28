@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ....schemas.health import (
     FleetOverview,
     FleetTraffic,
+    FleetTrafficBreakdown,
     NodeBgpSessions,
     NodeHealthRow,
     NodeLinks,
@@ -29,6 +30,7 @@ from ....services.node_status import NodeStatusStore
 from ....services.observability import (
     aggregate_fleet_traffic,
     compute_node_traffic,
+    compute_peer_rates,
     node_bgp_sessions,
     node_links,
 )
@@ -149,6 +151,43 @@ async def fleet_traffic(
             )
         )
     return {"points": aggregate_fleet_traffic(per_node)}
+
+
+@router.get("/fleet/traffic-breakdown", response_model=FleetTrafficBreakdown)
+async def fleet_traffic_breakdown(
+    peers_limit: int = Query(default=25, ge=1, le=200),
+    node_status: NodeStatusStore = Depends(get_node_status),
+    traffic: TrafficStore = Depends(get_traffic),
+) -> dict:
+    """概览流量板块右侧排行:按节点当前吞吐 + 按 WG 对端当前吞吐,各按 rx+tx 降序。
+
+    节点级取各节点吞吐序列最新速率(优先 30s 采样,回落快照差分);对端级由各节点最近
+    两份快照 per-peer 累计字节差分(~5min 分辨率)。peers 取 Top ``peers_limit``。
+    """
+
+    nodes = await node_status.list_all()
+    node_rows: list[dict] = []
+    peer_rows: list[dict] = []
+    for node in nodes:
+        nid = node["node_id"]
+        series = await _node_traffic_series(nid, traffic=traffic, node_status=node_status, limit=120)
+        if series:
+            last = series[-1]
+            node_rows.append(
+                {
+                    "node_id": nid,
+                    "rx_bytes_per_sec": last["rx_bytes_per_sec"],
+                    "tx_bytes_per_sec": last["tx_bytes_per_sec"],
+                }
+            )
+        snaps = await node_status.list_events(nid, kind="snapshot", limit=2)
+        for pr in compute_peer_rates(snaps):
+            peer_rows.append({"node_id": nid, **pr})
+
+    rate = lambda r: r["rx_bytes_per_sec"] + r["tx_bytes_per_sec"]
+    node_rows.sort(key=rate, reverse=True)
+    peer_rows.sort(key=rate, reverse=True)
+    return {"nodes": node_rows, "peers": peer_rows[:peers_limit]}
 
 
 @router.get("/nodes/{node_id}/links", response_model=NodeLinks)

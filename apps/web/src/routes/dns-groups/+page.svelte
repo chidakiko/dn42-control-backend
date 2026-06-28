@@ -6,7 +6,6 @@
 	import type { DnsGroupOut, DnsGroupZoneOut } from '$lib/types';
 	import Modal from '$lib/components/Modal.svelte';
 	import JsonEditor from '$lib/components/JsonEditor.svelte';
-	import Icon from '$lib/components/Icon.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import DnsRecordsPanel from '$lib/components/node/DnsRecordsPanel.svelte';
 	import SkeletonTable from '$lib/components/SkeletonTable.svelte';
@@ -205,18 +204,8 @@
 	}
 </script>
 
-<div class="page-head">
-	<div>
-		<div class="ph-title">
-			<Icon name="dns" size={22} />
-			<h1>{t('dns.title')}</h1>
-		</div>
-		<p class="ph-sub">{t('dns.subtitle')}</p>
-	</div>
+<div class="page-head" style="justify-content:flex-end">
 	<div class="ph-actions">
-		<button class="btn sm" onclick={loadGroups} disabled={loading}>
-			<Icon name="refresh" size={15} />{t('common.refresh')}
-		</button>
 		<button class="btn sm primary" onclick={openGroupCreate}>+ {t('dns.new')}</button>
 	</div>
 </div>

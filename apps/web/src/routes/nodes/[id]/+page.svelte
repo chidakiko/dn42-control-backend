@@ -375,11 +375,6 @@
 
 <div class="page-head" style="margin-bottom:1rem">
 	<div>
-		<a href="/nodes" class="back-link"><Icon name="arrow-left" size={13} />{t('node.back')}</a>
-		<div class="ph-title">
-			<Icon name="nodes" size={22} />
-			<h1 class="mono" style="margin:0">{nodeId}</h1>
-		</div>
 		{#if node}
 			<p class="ph-sub mono">
 				{node.site ?? '—'} · AS{node.asn} · {t('node.genShort')} {node.current_generation}
@@ -629,18 +624,6 @@
 		color: var(--text-dim);
 		font-size: 0.85rem;
 		line-height: 1.5;
-	}
-	.back-link {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		color: var(--text-faint);
-		font-size: 0.8rem;
-		margin-bottom: 0.3rem;
-	}
-	.back-link:hover {
-		color: var(--text-dim);
-		text-decoration: none;
 	}
 	.disc-ic {
 		display: flex;

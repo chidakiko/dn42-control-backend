@@ -48,6 +48,11 @@ class RefreshState {
 		if (browser) localStorage.setItem(KEY, String(ms));
 		this.start();
 	}
+
+	/** Manual refresh: bump the tick so every subscribed page re-fetches now. */
+	refreshNow() {
+		this.tick++;
+	}
 }
 
 export const autoRefresh = new RefreshState();

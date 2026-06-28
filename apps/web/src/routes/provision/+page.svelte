@@ -2,7 +2,6 @@
 	import { api, errorMessage } from '$lib/api';
 	import { toast } from '$lib/toast.svelte';
 	import { t } from '$lib/i18n.svelte';
-	import Icon from '$lib/components/Icon.svelte';
 	import type { ProvisionOut } from '$lib/types';
 	import JsonEditor from '$lib/components/JsonEditor.svelte';
 	import JsonView from '$lib/components/JsonView.svelte';
@@ -50,15 +49,6 @@
 	}
 </script>
 
-<div class="page-head">
-	<div>
-		<div class="ph-title">
-			<Icon name="provision" size={22} />
-			<h1>{t('prov.title')}</h1>
-		</div>
-		<p class="ph-sub">{t('prov.note')}</p>
-	</div>
-</div>
 
 <div class="card">
 	<div class="card-head">
